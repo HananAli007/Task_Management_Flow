@@ -6,6 +6,8 @@ import { ChatPanel } from "@/components/ChatPanel";
 import { useAuthStore } from "@/store/useAuthStore";
 import { userApi, User, Group } from "@/lib/api/users";
 import { usePermission } from "@/hooks/usePermission";
+import { useSignalRContext } from "@/context/SignalRContext";
+import { useChatStore } from "@/store/useChatStore";
 
 export default function TeamPage() {
   const [team, setTeam] = useState<User[]>([]);
@@ -15,12 +17,17 @@ export default function TeamPage() {
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   const [groups, setGroups] = useState<Group[]>([]);
   const { user } = useAuthStore();
+  const isSuperAdmin = user?.role?.toLowerCase() === 'superadmin';
+  const isAdmin = user?.role?.toLowerCase() === 'admin';
+  const isPrivileged = isSuperAdmin || isAdmin;
+
   const { hasGlobalPermission } = usePermission();
+  const { onlineUsers, unreadCounts } = useSignalRContext();
+  const { setActiveChatUser } = useChatStore();
   
   // Modals & Messaging state
   const [modalType, setModalType] = useState<'add' | 'message' | 'profile' | null>(null);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
-  const [chatUser, setChatUser] = useState<User | null>(null);
 
   useEffect(() => {
     fetchTeam();
@@ -98,13 +105,21 @@ export default function TeamPage() {
     }
   };
 
-  const filteredTeam = team.filter(member => 
-    (member.id !== user?.id) && (
-      member.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      member.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      member.role.toLowerCase().includes(searchQuery.toLowerCase())
-    )
-  );
+  const filteredTeam = team.filter(member => {
+    // 1. Hide current user from their own team list
+    if (member.id === user?.id) return false;
+
+    // 2. ONLY SuperAdmin can see deleted users
+    if (member.is_deleted && !isSuperAdmin) return false;
+
+    // 3. Search logic
+    const search = searchQuery.toLowerCase();
+    return (
+      member.name.toLowerCase().includes(search) ||
+      member.email.toLowerCase().includes(search) ||
+      member.role.toLowerCase().includes(search)
+    );
+  });
 
   if (isLoading) {
     return (
@@ -116,7 +131,7 @@ export default function TeamPage() {
 
   const handleOpenModal = (type: 'add' | 'message' | 'profile', user?: User) => {
     if (type === 'message' && user) {
-      setChatUser(user);
+      setActiveChatUser(user);
       setActiveDropdown(null);
       return;
     }
@@ -180,7 +195,15 @@ export default function TeamPage() {
                   member.name.substring(0, 2).toUpperCase()
                 )}
                 {!member.is_deleted && (
-                  <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2" style={{ borderColor: "var(--bg-card)" }} />
+                  <div 
+                    className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 transition-colors duration-500 ${onlineUsers.has(member.id.toLowerCase()) ? 'bg-green-500' : 'bg-slate-400'}`} 
+                    style={{ borderColor: "var(--bg-card)" }} 
+                  />
+                )}
+                {(unreadCounts[member.id.toLowerCase()] || 0) > 0 && (
+                  <div className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center border-2 shadow-lg animate-bounce" style={{ borderColor: "var(--bg-card)" }}>
+                    {unreadCounts[member.id.toLowerCase()] > 99 ? '99+' : unreadCounts[member.id.toLowerCase()]}
+                  </div>
                 )}
               </div>
               <div className="flex-1 min-w-0">
@@ -196,8 +219,9 @@ export default function TeamPage() {
               </div>
               
               {(() => {
-                const canChangeRole = hasGlobalPermission('Team', 'Change_Role');
-                const canRemove = hasGlobalPermission('Team', 'Remove_Member');
+                // Roles check: Only SuperAdmin/Admin can change roles or remove members
+                const canChangeRole = isPrivileged && hasGlobalPermission('Team', 'Change_Role');
+                const canRemove = isPrivileged && hasGlobalPermission('Team', 'Remove_Member');
 
                 if (!canChangeRole && !canRemove) return null;
 
@@ -231,7 +255,9 @@ export default function TeamPage() {
                             
                             {activeRoleMenu === member.id && (
                               <div className="mx-2 mb-2 rounded-lg border overflow-hidden bg-black/5 dark:bg-white/5" style={{ borderColor: "var(--border-color)" }}>
-                                {groups.map(group => (
+                                {Array.isArray(groups) && groups
+                                  .filter(g => g.description.toLowerCase() !== 'super admin')
+                                  .map(group => (
                                   <button
                                     key={group.id}
                                     onClick={(e) => { e.stopPropagation(); handleSetGroup(member.id, group.id); setActiveRoleMenu(null); }}
@@ -377,13 +403,6 @@ export default function TeamPage() {
         </div>
       )}
 
-      {/* Floating Chat Panel */}
-      {chatUser && (
-        <ChatPanel 
-          user={chatUser} 
-          onClose={() => setChatUser(null)} 
-        />
-      )}
     </div>
   );
 }

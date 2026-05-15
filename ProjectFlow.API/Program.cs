@@ -64,6 +64,16 @@ builder.Services.AddAuthentication(options =>
     {
         OnMessageReceived = context =>
         {
+            // SignalR sends the token in the query string "access_token"
+            var accessToken = context.Request.Query["access_token"];
+            var path = context.HttpContext.Request.Path;
+            if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs"))
+            {
+                context.Token = accessToken;
+                return Task.CompletedTask;
+            }
+
+            // Standard API calls use Authorization header
             var authHeader = context.Request.Headers.Authorization.ToString();
             if (string.IsNullOrEmpty(authHeader)) return Task.CompletedTask;
 
@@ -163,11 +173,13 @@ builder.Services.AddSwaggerGen(options =>
 });
 
 // ===== CORS =====
+var allowedOrigins = builder.Configuration.GetSection("CorsSettings:AllowedOrigins").Get<string[]>() ?? Array.Empty<string>();
+
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAll", policy =>
+    options.AddPolicy("DefaultPolicy", policy =>
     {
-        policy.SetIsOriginAllowed(origin => true)
+        policy.WithOrigins(allowedOrigins)
               .AllowAnyMethod()
               .AllowAnyHeader()
               .AllowCredentials();
@@ -177,13 +189,14 @@ builder.Services.AddCors(options =>
 var app = builder.Build();
 
 // ===== Middleware Pipeline =====
+app.UseCors("DefaultPolicy"); // Move to top for best preflight handling
+
 app.UseMiddleware<GlobalExceptionMiddleware>();
 
 app.UseSwagger();
 app.UseSwaggerUI();
 
 app.UseStaticFiles(); // Serve wwwroot/uploads/
-app.UseCors("AllowAll");
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
@@ -196,6 +209,7 @@ using (var scope = app.Services.CreateScope())
     try
     {
         var context = services.GetRequiredService<AppDbContext>();
+        await context.Database.MigrateAsync();
         await ProjectFlow.Infrastructure.Services.DbInitializer.SeedPermissionsAsync(context);
     }
     catch (Exception ex)
@@ -205,4 +219,7 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
-app.Run("http://0.0.0.0:5000");
+// Port is configured via appsettings.json → Kestrel → Endpoints
+// Dev:        http://0.0.0.0:5000  (appsettings.Development.json)
+// Production: http://0.0.0.0:8080  (appsettings.json)
+app.Run();

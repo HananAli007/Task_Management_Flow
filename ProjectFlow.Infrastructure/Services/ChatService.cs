@@ -84,4 +84,13 @@ public class ChatService : IChatService
 
         await _db.SaveChangesAsync();
     }
+
+    public async Task<Dictionary<Guid, int>> GetUnreadCountsAsync(Guid userId)
+    {
+        return await _db.ChatMessages
+            .Where(m => m.ReceiverId == userId && !m.IsRead)
+            .GroupBy(m => m.SenderId)
+            .Select(g => new { SenderId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.SenderId, x => x.Count);
+    }
 }

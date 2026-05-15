@@ -1,27 +1,33 @@
 import axios from 'axios';
 
-const getBaseUrl = () => {
-  if (typeof window !== 'undefined') {
-    const { hostname } = window.location;
-    // If accessed via IP, use the same IP but port 5000
-    if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
-      return `http://${hostname}:5000`;
-    }
-  }
-  return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
-};
-
-const API_BASE_URL = getBaseUrl();
-
+// All API calls go through Next.js rewrites proxy (/backend-api/* → backend /api/*)
+// This eliminates CORS and Mixed Content issues completely.
 const api = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: '',
   headers: {
     'Content-Type': 'application/json',
   },
 });
 
-// Request interceptor to add JWT token
+// Request interceptor to add JWT token and handle proxying
 api.interceptors.request.use((config) => {
+  // Log the original request for debugging
+  if (process.env.NODE_ENV === 'development') {
+    console.log(`[API] Request to: ${config.url}`);
+  }
+
+  // Rewrite /api/* paths to /backend-api/* so Next.js proxy handles them
+  // This handles both relative (/api/...) and absolute (http://.../api/...) URLs
+  if (config.url) {
+    if (config.url.startsWith('/api/')) {
+      config.url = config.url.replace(/^\/api\//, '/backend-api/');
+    } else if (config.url.includes('/api/') && !config.url.includes('/backend-api/')) {
+      // Handle cases where a full URL might have been passed
+      const parts = config.url.split('/api/');
+      config.url = `/backend-api/${parts[1]}`;
+    }
+  }
+
   if (typeof window !== 'undefined') {
     const token = localStorage.getItem('token');
     if (token) {

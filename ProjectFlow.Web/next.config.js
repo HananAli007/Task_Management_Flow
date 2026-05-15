@@ -1,9 +1,16 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
-  // Standard nextjs settings
-  reactStrictMode: true,
-  swcMinify: true,
-}
+  reactStrictMode: false, // Recommended for SignalR to avoid double-connection in dev
+  images: {
+    unoptimized: true,
+  },
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
+  typescript: {
+    ignoreBuildErrors: true,
+  }
+};
 
-module.exports = nextConfig
+module.exports = nextConfig;

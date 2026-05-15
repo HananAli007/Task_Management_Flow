@@ -6,12 +6,16 @@ import { Sidebar } from "@/components/Sidebar";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useThemeStore } from "@/store/useThemeStore";
 import { SignalRProvider } from "@/context/SignalRContext";
+import { Toaster } from "sonner";
+import { ChatPanel } from "@/components/ChatPanel";
+import { useChatStore } from "@/store/useChatStore";
 
 export function ClientLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { user, token, fetchMe, isLoading } = useAuthStore();
   const { theme } = useThemeStore();
+  const { activeChatUser, setActiveChatUser } = useChatStore();
 
   // Apply theme class to <html> element
   useEffect(() => {
@@ -33,6 +37,22 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
   const isPublicRoute = publicRoutes.includes(pathname);
 
   useEffect(() => {
+    const handleOpenChat = async (e: any) => {
+      const { userId, name } = e.detail;
+      // If we have a name, we can create a placeholder user
+      if (name) {
+        setActiveChatUser({ id: userId, name, email: '', role: '', is_deleted: false, created_at: '' });
+      } else {
+        // Try to find in team list if possible (though we don't have it here)
+        // For now, we'll rely on the event providing the name
+        setActiveChatUser({ id: userId, name: 'User', email: '', role: '', is_deleted: false, created_at: '' });
+      }
+    };
+    window.addEventListener('open-chat', handleOpenChat);
+    return () => window.removeEventListener('open-chat', handleOpenChat);
+  }, [setActiveChatUser]);
+
+  useEffect(() => {
     if (!isLoading && !token && !isPublicRoute) {
       router.push("/login");
     }
@@ -48,6 +68,7 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <SignalRProvider>
+      <Toaster position="top-right" richColors />
       <div className="flex h-screen overflow-hidden bg-[var(--bg-primary)]">
         <Sidebar />
         <main
@@ -64,6 +85,13 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
           <div className={`relative p-4 md:p-8 flex-1 flex flex-col h-full ${pathname === '/board' ? 'overflow-hidden' : 'overflow-y-auto'}`}>
             {children}
           </div>
+
+          {activeChatUser && (
+            <ChatPanel 
+              user={activeChatUser} 
+              onClose={() => setActiveChatUser(null)} 
+            />
+          )}
         </main>
       </div>
     </SignalRProvider>

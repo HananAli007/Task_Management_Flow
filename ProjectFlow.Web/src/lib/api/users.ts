@@ -40,7 +40,7 @@ export const userApi = {
   },
   getGroups: async () => {
     const response = await api.get('/api/Permission/groups');
-    return response.data as Group[];
+    return (response.data.data || response.data) as Group[];
   },
   updateGroup: async (userId: string, groupId: number) => {
     const response = await api.post(`/api/Permission/user/${userId}/group`, groupId);

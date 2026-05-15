@@ -1,10 +1,11 @@
-"use client";
-
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Send, MessageCircle, Loader2, Paperclip, Image as ImageIcon, FileText, Download } from 'lucide-react';
+import { X, Send, MessageCircle, Loader2, Paperclip, Image as ImageIcon, FileText, Download, Maximize2, Minimize2, Smile } from 'lucide-react';
 import { User } from '@/lib/api/users';
 import { chatApi, ChatMessage } from '@/lib/api/chat';
 import { useSignalR } from '@/hooks/useSignalR';
+import { useSignalRContext } from '@/context/SignalRContext';
+import EmojiPicker, { Theme } from 'emoji-picker-react';
+import { useThemeStore } from '@/store/useThemeStore';
 
 interface ChatPanelProps {
   user: User;
@@ -16,25 +17,49 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ user, onClose }) => {
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
+  const [isFullScreen, setIsFullScreen] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const emojiRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  
+  const { onlineUsers, markAsRead } = useSignalRContext();
+  const { theme } = useThemeStore();
+  const isDarkMode = theme === 'dark';
+  const isOnline = onlineUsers.has(user.id.toLowerCase());
 
   const handleNewMessage = React.useCallback((message: any) => {
-    const sId = message.senderId || message.sender_id;
-    const rId = message.receiverId || message.receiver_id;
+    const sId = (message.senderId || message.sender_id)?.toLowerCase();
+    const rId = (message.receiverId || message.receiver_id)?.toLowerCase();
+    const targetId = user.id.toLowerCase();
 
-    if (sId === user.id || rId === user.id) {
+    if (sId === targetId || rId === targetId) {
       setMessages(prev => {
         const mId = message.id;
         if (prev.some(m => m.id === mId)) return prev;
         return [...prev, message];
       });
+      // If we receive a message while chat is open, mark it as read
+      if (sId === targetId) {
+        markAsRead(targetId);
+      }
     }
-  }, [user.id]);
+  }, [user.id, markAsRead]);
 
   const { sendMessage, isConnected } = useSignalR(handleNewMessage);
 
   useEffect(() => {
+    const targetId = user.id.toLowerCase();
+    // Notify context that chat is opened
+    window.dispatchEvent(new CustomEvent('chat-opened', { detail: { userId: targetId } }));
+    markAsRead(targetId);
+
+    // Auto-focus input when chat opens
+    setTimeout(() => {
+      inputRef.current?.focus();
+    }, 100);
+
     const fetchHistory = async () => {
       try {
         const history = await chatApi.getConversation(user.id);
@@ -46,6 +71,10 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ user, onClose }) => {
       }
     };
     fetchHistory();
+
+    return () => {
+      window.dispatchEvent(new CustomEvent('chat-closed'));
+    };
   }, [user.id]);
 
   useEffect(() => {
@@ -54,13 +83,29 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ user, onClose }) => {
     }
   }, [messages]);
 
+  // Close emoji picker when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (emojiRef.current && !emojiRef.current.contains(event.target as Node)) {
+        setShowEmojiPicker(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
   const handleSend = async (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!inputValue.trim() || !isConnected) return;
     
     const content = inputValue.trim();
     setInputValue('');
+    setShowEmojiPicker(false);
     await sendMessage(user.id, content);
+  };
+
+  const onEmojiClick = (emojiData: any) => {
+    setInputValue(prev => prev + emojiData.emoji);
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -82,33 +127,48 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ user, onClose }) => {
   };
 
   return (
-    <div className="fixed bottom-6 right-6 w-[340px] h-[500px] flex flex-col glass-card shadow-[0_20px_50px_rgba(0,0,0,0.3)] z-[1000] animate-in slide-in-from-bottom-8 duration-500 overflow-hidden border border-white/10" 
-         style={{ backgroundColor: 'var(--bg-card)', borderRadius: '24px' }}>
+    <div className={`absolute transition-all duration-500 ease-in-out flex flex-col glass-card shadow-[0_20px_50px_rgba(0,0,0,0.3)] z-[1000] overflow-hidden border border-white/10 ${
+      isFullScreen 
+        ? 'inset-0 md:inset-4 w-auto h-auto' 
+        : 'bottom-6 right-6 w-[340px] h-[500px] animate-in slide-in-from-bottom-8'
+    }`} 
+    style={{ backgroundColor: 'var(--bg-card)', borderRadius: isFullScreen ? '16px' : '24px' }}>
       
       {/* Premium Header */}
       <div className="p-4 border-b flex items-center justify-between bg-gradient-to-r from-blue-600/10 to-indigo-600/10" style={{ borderColor: 'var(--border-color)' }}>
         <div className="flex items-center gap-3">
           <div className="relative">
             <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-sm font-bold text-white shadow-lg shadow-blue-500/20">
-              {user.name.substring(0, 2).toUpperCase()}
+              {user.avatar_url ? (
+                <img src={user.avatar_url} alt="" className="w-full h-full rounded-2xl object-cover" />
+              ) : (
+                user.name.substring(0, 2).toUpperCase()
+              )}
             </div>
-            {isConnected && (
-              <div className="absolute -bottom-1 -right-1 w-3.5 h-3.5 bg-green-500 border-2 rounded-full shadow-sm" style={{ borderColor: 'var(--bg-card)' }} />
-            )}
+            <div className={`absolute -bottom-1 -right-1 w-3.5 h-3.5 border-2 rounded-full shadow-sm transition-colors duration-500 ${isOnline ? 'bg-green-500' : 'bg-slate-400'}`} style={{ borderColor: 'var(--bg-card)' }} />
           </div>
           <div>
             <h3 className="text-sm font-bold tracking-tight" style={{ color: 'var(--text-primary)' }}>{user.name}</h3>
             <p className="text-[10px] font-medium uppercase tracking-wider opacity-60" style={{ color: 'var(--text-muted)' }}>
-              {isConnected ? 'Active Now' : 'Connecting...'}
+              {isOnline ? 'Active Now' : 'Offline'}
             </p>
           </div>
         </div>
-        <button 
-          onClick={onClose} 
-          className="p-2 rounded-xl hover:bg-red-500/10 hover:text-red-500 transition-all text-slate-400"
-        >
-          <X size={18} />
-        </button>
+        <div className="flex items-center gap-1">
+          <button 
+            onClick={() => setIsFullScreen(!isFullScreen)} 
+            className="p-2 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-all text-slate-400"
+            title={isFullScreen ? "Exit Fullscreen" : "Fullscreen"}
+          >
+            {isFullScreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+          </button>
+          <button 
+            onClick={onClose} 
+            className="p-2 rounded-xl hover:bg-red-500/10 hover:text-red-500 transition-all text-slate-400"
+          >
+            <X size={18} />
+          </button>
+        </div>
       </div>
 
       {/* Messages Area */}
@@ -177,7 +237,19 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ user, onClose }) => {
       </div>
 
       {/* Input Area */}
-      <div className="p-4 bg-gradient-to-t from-black/5 to-transparent">
+      <div className="p-4 bg-gradient-to-t from-black/5 to-transparent relative">
+        {showEmojiPicker && (
+          <div ref={emojiRef} className="absolute bottom-full right-4 mb-2 z-[1001]">
+            <EmojiPicker 
+              theme={isDarkMode ? Theme.DARK : Theme.LIGHT}
+              onEmojiClick={onEmojiClick}
+              autoFocusSearch={false}
+              width={300}
+              height={400}
+            />
+          </div>
+        )}
+
         <form 
           onSubmit={handleSend} 
           className="flex items-center gap-2 bg-white dark:bg-white/5 rounded-2xl p-1.5 shadow-inner border border-black/5 dark:border-white/10 focus-within:border-blue-500/50 transition-all"
@@ -189,16 +261,29 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ user, onClose }) => {
             onChange={handleFileChange}
             accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx"
           />
-          <button 
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isUploading || !isConnected}
-            className="w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-30"
-          >
-            {isUploading ? <Loader2 size={18} className="animate-spin" /> : <Paperclip size={18} />}
-          </button>
+          <div className="flex items-center">
+            <button 
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isUploading || !isConnected}
+              className="w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-30"
+              title="Attach file"
+            >
+              {isUploading ? <Loader2 size={18} className="animate-spin" /> : <Paperclip size={18} />}
+            </button>
+            <button 
+              type="button"
+              onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+              disabled={!isConnected}
+              className={`w-9 h-9 rounded-xl flex items-center justify-center transition-colors disabled:opacity-30 ${showEmojiPicker ? 'bg-blue-500/10 text-blue-500' : 'text-slate-400 hover:bg-black/5 dark:hover:bg-white/5'}`}
+              title="Emoji"
+            >
+              <Smile size={18} />
+            </button>
+          </div>
           
           <input
+            ref={inputRef}
             type="text"
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
