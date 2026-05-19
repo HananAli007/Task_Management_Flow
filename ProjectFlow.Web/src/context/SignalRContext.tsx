@@ -322,12 +322,12 @@ export const SignalRProvider: React.FC<{ children: React.ReactNode }> = ({ child
       
       {incomingCall && mounted && createPortal(
         <div 
-          className={`fixed transition-all duration-500 ease-in-out flex flex-col shadow-[0_25px_60px_rgba(0,0,0,0.45)] z-[999999] overflow-hidden border border-slate-200 dark:border-white/10 ${
+          className={`fixed transition-all duration-500 ease-in-out flex flex-col shadow-[0_25px_60px_rgba(0,0,0,0.45)] overflow-hidden border border-slate-200 dark:border-white/10 ${
             isCallExpanded 
               ? 'inset-0 md:inset-6 w-auto h-auto' 
               : 'bottom-6 right-6 w-[340px] h-[500px] animate-in slide-in-from-bottom-8'
           }`} 
-          style={{ backgroundColor: 'var(--bg-secondary)', borderRadius: isCallExpanded ? '16px' : '24px' }}
+          style={{ backgroundColor: 'var(--bg-secondary)', borderRadius: isCallExpanded ? '16px' : '24px', zIndex: 999999 }}
         >
           {/* Premium Header */}
           <div className="p-4 border-b flex items-center justify-between bg-[var(--bg-secondary)]" style={{ borderColor: 'var(--border-color)' }}>
@@ -366,7 +366,7 @@ export const SignalRProvider: React.FC<{ children: React.ReactNode }> = ({ child
           </div>
 
           {/* Body */}
-          <div className="flex-1 flex flex-col justify-between p-8 text-current bg-[var(--bg-secondary)]">
+          <div className="flex-1 flex flex-col justify-between p-8 text-current" style={{ backgroundColor: 'var(--bg-secondary)' }}>
             <div className="text-center space-y-6 pt-12 flex-1 flex flex-col justify-center">
               {/* Pulsing Avatar Container */}
               <div className="relative mx-auto w-28 h-28 flex items-center justify-center">

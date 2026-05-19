@@ -774,12 +774,12 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ user, onClose }) => {
   };
 
   return (
-    <div className={`absolute transition-all duration-500 ease-in-out flex flex-col glass-card shadow-[0_20px_50px_rgba(0,0,0,0.3)] z-[1000] overflow-hidden border border-white/10 ${
+    <div className={`absolute transition-all duration-500 ease-in-out flex flex-col shadow-[0_25px_60px_rgba(0,0,0,0.45)] z-[1000] overflow-hidden border border-slate-200 dark:border-white/10 ${
       isFullScreen 
         ? 'inset-0 md:inset-4 w-auto h-auto' 
         : 'bottom-6 right-6 w-[340px] h-[500px] animate-in slide-in-from-bottom-8'
     }`} 
-    style={{ backgroundColor: 'var(--bg-card)', borderRadius: isFullScreen ? '16px' : '24px' }}>
+    style={{ backgroundColor: 'var(--bg-secondary)', borderRadius: isFullScreen ? '16px' : '24px' }}>
       
       <audio ref={remoteAudioRef} autoPlay className="hidden" />
       
@@ -869,7 +869,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ user, onClose }) => {
       )}
 
       {/* Premium Header */}
-      <div className="p-4 border-b flex items-center justify-between bg-gradient-to-r from-blue-600/5 via-indigo-600/5 to-transparent backdrop-blur-sm" style={{ borderColor: 'var(--border-color)' }}>
+      <div className="p-4 border-b flex items-center justify-between bg-[var(--bg-secondary)]" style={{ borderColor: 'var(--border-color)' }}>
         <div className="flex items-center gap-3">
           <div className="relative">
             <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-sm font-bold text-white shadow-lg shadow-blue-500/20">
@@ -879,7 +879,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ user, onClose }) => {
                 user.name.substring(0, 2).toUpperCase()
               )}
             </div>
-            <div className={`absolute -bottom-1 -right-1 w-3.5 h-3.5 border-2 rounded-full shadow-sm transition-colors duration-500 ${isOnline ? 'bg-green-500' : 'bg-slate-400'}`} style={{ borderColor: 'var(--bg-card)' }} />
+            <div className={`absolute -bottom-1 -right-1 w-3.5 h-3.5 border-2 rounded-full shadow-sm transition-colors duration-500 ${isOnline ? 'bg-green-500' : 'bg-slate-400'}`} style={{ borderColor: 'var(--bg-secondary)' }} />
           </div>
           <div>
             <h3 className="text-sm font-extrabold tracking-tight" style={{ color: 'var(--text-primary)' }}>{user.name}</h3>
@@ -930,7 +930,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ user, onClose }) => {
       </div>
 
       {/* Messages / Call History Area */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-5 space-y-4 custom-scrollbar bg-dots-pattern">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto p-5 space-y-4 custom-scrollbar bg-[var(--bg-secondary)]">
         {showHistoryTab ? (
           /* Calling History list */
           <div className="space-y-4 py-2 animate-in fade-in duration-300">
@@ -1043,7 +1043,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ user, onClose }) => {
 
       {/* Input Area */}
       {!showHistoryTab && (
-        <div className="p-4 bg-gradient-to-t from-black/5 to-transparent relative border-t border-black/5 dark:border-white/5">
+        <div className="p-4 bg-[var(--bg-secondary)] relative border-t border-black/5 dark:border-white/5">
           {showEmojiPicker && (
             <div ref={emojiRef} className="absolute bottom-full right-4 mb-2 z-[1001]">
               <EmojiPicker 
