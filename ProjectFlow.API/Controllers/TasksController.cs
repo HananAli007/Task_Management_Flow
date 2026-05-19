@@ -57,7 +57,7 @@ public class TasksController : ControllerBase
     [Consumes("multipart/form-data")]
     public async Task<IActionResult> Update(Guid id, [FromForm] UpdateTaskFormDto input)
     {
-        var result = await _taskService.UpdateAsync(id, input);
+        var result = await _taskService.UpdateAsync(id, input, GetUserId());
         if (result == null) return NotFound(new ApiErrorResponse { Error = new() { Code = "not_found", Message = "Task not found." } });
         return Ok(ApiResponse<TaskResponseDto>.SuccessResult(result, "Task updated successfully."));
     }
@@ -66,9 +66,17 @@ public class TasksController : ControllerBase
     [HttpPatch("{id:guid}/status")]
     public async Task<IActionResult> PatchStatus(Guid id, [FromBody] TaskStatusUpdateDto input)
     {
-        var success = await _taskService.UpdateStatusAsync(id, input.Status);
+        var success = await _taskService.UpdateStatusAsync(id, input.Status, GetUserId());
         if (!success) return NotFound(new ApiErrorResponse { Error = new() { Code = "not_found", Message = "Task not found." } });
         return Ok(ApiResponse<object>.SuccessResult(null, "Status updated successfully."));
+    }
+
+    /// <summary>Get Task Audit History</summary>
+    [HttpGet("{id:guid}/history")]
+    public async Task<IActionResult> GetHistory(Guid id)
+    {
+        var result = await _taskService.GetHistoryAsync(id);
+        return Ok(ApiResponse<List<TaskHistoryResponseDto>>.SuccessResult(result));
     }
 
     /// <summary>Delete Task</summary>

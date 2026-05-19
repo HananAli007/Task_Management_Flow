@@ -12,11 +12,13 @@ public class TaskService : ITaskService
 {
     private readonly AppDbContext _context;
     private readonly IAttachmentService _attachmentService;
+    private readonly INotificationService _notificationService;
 
-    public TaskService(AppDbContext context, IAttachmentService attachmentService)
+    public TaskService(AppDbContext context, IAttachmentService attachmentService, INotificationService notificationService)
     {
         _context = context;
         _attachmentService = attachmentService;
+        _notificationService = notificationService;
     }
 
     public async Task<TaskResponseDto> CreateAsync(CreateTaskFormDto input, Guid creatorId)
@@ -74,6 +76,37 @@ public class TaskService : ITaskService
         }
 
         await _context.SaveChangesAsync();
+
+        // Log Task Creation History
+        await LogHistoryAsync(task.Id, creatorId, "Create", "Created the task");
+        
+        if (task.AssigneeId.HasValue && task.AssigneeId.Value != Guid.Empty)
+        {
+            var assigneeUser = await _context.Users.FindAsync(task.AssigneeId.Value);
+            var assigneeName = assigneeUser?.Name ?? "Unknown";
+            await LogHistoryAsync(task.Id, creatorId, "Assign", $"Assigned the task to {assigneeName}");
+
+            try
+            {
+                var project = await _context.Projects.FindAsync(task.ProjectId);
+                var creatorUser = await _context.Users.FindAsync(creatorId);
+                var creatorName = creatorUser?.Name ?? "A team member";
+
+                await _notificationService.SendNotificationAsync(
+                    task.AssigneeId.Value,
+                    "TaskAssignment",
+                    "New Task Assigned",
+                    $"Task '{task.Title}' has been assigned to you by {creatorName} in project '{project?.Name ?? "General"}'.",
+                    task.Id.ToString(),
+                    task.Title,
+                    project?.Name
+                );
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[NOTIFICATION ERROR] Failed to send assignment notification: {ex.Message}");
+            }
+        }
 
         // Handle attachments
         if (input.Attachments != null && input.Attachments.Count > 0)
@@ -201,16 +234,57 @@ public class TaskService : ITaskService
             }).ToList()
         };
 
+        // Populate dynamic StatusName and SystemStatus for detail modal
+        string statusName = task.Status;
+        int? systemStatus = 0;
+
+        if (int.TryParse(task.Status, out int columnId))
+        {
+            var column = await _context.BoardColumns.FindAsync(columnId);
+            if (column != null)
+            {
+                statusName = column.Title;
+                systemStatus = column.SystemStatus;
+            }
+        }
+        else
+        {
+            statusName = task.Status.ToLower() switch
+            {
+                "todo" => "To Do",
+                "inprogress" => "In Progress",
+                "review" => "Review",
+                "completed" => "Completed",
+                _ => task.Status
+            };
+            systemStatus = task.Status.ToLower() switch
+            {
+                "todo" => 0,
+                "inprogress" => 1,
+                "review" => 2,
+                "completed" => 3,
+                _ => 0
+            };
+        }
+
+        response.StatusName = statusName;
+        response.SystemStatus = systemStatus;
+
         return response;
     }
 
-    public async Task<TaskResponseDto?> UpdateAsync(Guid id, UpdateTaskFormDto input)
+    public async Task<TaskResponseDto?> UpdateAsync(Guid id, UpdateTaskFormDto input, Guid userId)
     {
         var task = await _context.TaskItems
             .Include(t => t.TaskTags)
             .FirstOrDefaultAsync(t => t.Id == id);
 
         if (task == null) return null;
+
+        var oldAssigneeId = task.AssigneeId;
+        var oldStatus = task.Status;
+        var oldTitle = task.Title;
+        var oldDesc = task.Description;
 
         task.Title = input.Title;
         task.Description = input.Description;
@@ -247,17 +321,122 @@ public class TaskService : ITaskService
         }
 
         await _context.SaveChangesAsync();
+
+        // 1. Audit Assignee Changes
+        if (oldAssigneeId != input.AssigneeId)
+        {
+            if (input.AssigneeId.HasValue && input.AssigneeId.Value != Guid.Empty)
+            {
+                var assigneeUser = await _context.Users.FindAsync(input.AssigneeId.Value);
+                var assigneeName = assigneeUser?.Name ?? "Unknown";
+                await LogHistoryAsync(task.Id, userId, "Assign", $"Assigned the task to {assigneeName}");
+
+                try
+                {
+                    var project = await _context.Projects.FindAsync(task.ProjectId);
+                    var updaterUser = await _context.Users.FindAsync(userId);
+                    var updaterName = updaterUser?.Name ?? "A team member";
+
+                    await _notificationService.SendNotificationAsync(
+                        input.AssigneeId.Value,
+                        "TaskAssignment",
+                        "Task Assigned to You",
+                        $"Task '{task.Title}' has been assigned to you by {updaterName} in project '{project?.Name ?? "General"}'.",
+                        task.Id.ToString(),
+                        task.Title,
+                        project?.Name
+                    );
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[NOTIFICATION ERROR] Failed to send reassignment notification: {ex.Message}");
+                }
+            }
+            else
+            {
+                await LogHistoryAsync(task.Id, userId, "Assign", "Unassigned the task");
+            }
+        }
+
+        // 2. Audit Status/Column movements
+        if (oldStatus != input.Status && input.Status != null)
+        {
+            var oldColName = oldStatus;
+            var newColName = input.Status;
+
+            if (int.TryParse(oldStatus, out int oldColId))
+            {
+                var oldCol = await _context.BoardColumns.FindAsync(oldColId);
+                if (oldCol != null) oldColName = oldCol.Title;
+            }
+            if (int.TryParse(input.Status, out int newColId))
+            {
+                var newCol = await _context.BoardColumns.FindAsync(newColId);
+                if (newCol != null) newColName = newCol.Title;
+            }
+
+            await LogHistoryAsync(task.Id, userId, "Move", $"Moved the task from '{oldColName}' to '{newColName}'");
+        }
+
+        // 3. Audit Details changes
+        if (oldTitle != input.Title || oldDesc != input.Description)
+        {
+            await LogHistoryAsync(task.Id, userId, "Edit", "Updated task details");
+        }
         
         return await MapToResponseDto(task);
     }
 
-    public async Task<bool> UpdateStatusAsync(Guid id, string status)
+    public async Task<bool> UpdateStatusAsync(Guid id, string status, Guid userId)
     {
         var task = await _context.TaskItems.FindAsync(id);
         if (task == null) return false;
 
-        task.Status = status;
-        await _context.SaveChangesAsync();
+        var oldStatus = task.Status;
+        if (oldStatus != status)
+        {
+            task.Status = status;
+            await _context.SaveChangesAsync();
+
+            var oldColName = oldStatus;
+            var newColName = status;
+
+            if (int.TryParse(oldStatus, out int oldColId))
+            {
+                var oldCol = await _context.BoardColumns.FindAsync(oldColId);
+                if (oldCol != null) oldColName = oldCol.Title;
+            }
+            else
+            {
+                oldColName = oldStatus.ToLower() switch
+                {
+                    "todo" => "To Do",
+                    "inprogress" => "In Progress",
+                    "review" => "Review",
+                    "completed" => "Completed",
+                    _ => oldStatus
+                };
+            }
+
+            if (int.TryParse(status, out int newColId))
+            {
+                var newCol = await _context.BoardColumns.FindAsync(newColId);
+                if (newCol != null) newColName = newCol.Title;
+            }
+            else
+            {
+                newColName = status.ToLower() switch
+                {
+                    "todo" => "To Do",
+                    "inprogress" => "In Progress",
+                    "review" => "Review",
+                    "completed" => "Completed",
+                    _ => status
+                };
+            }
+
+            await LogHistoryAsync(task.Id, userId, "Move", $"Moved the task from '{oldColName}' to '{newColName}'");
+        }
 
         return true;
     }
@@ -285,7 +464,45 @@ public class TaskService : ITaskService
             .Include(t => t.TaskTags).ThenInclude(tt => tt.Tag)
             .FirstAsync(t => t.Id == task.Id);
 
-        return MapToResponseDtoFromLoaded(loaded);
+        var dto = MapToResponseDtoFromLoaded(loaded);
+
+        // Map dynamic column names
+        string statusName = loaded.Status;
+        int? systemStatus = 0;
+
+        if (int.TryParse(loaded.Status, out int columnId))
+        {
+            var column = await _context.BoardColumns.FindAsync(columnId);
+            if (column != null)
+            {
+                statusName = column.Title;
+                systemStatus = column.SystemStatus;
+            }
+        }
+        else
+        {
+            statusName = loaded.Status.ToLower() switch
+            {
+                "todo" => "To Do",
+                "inprogress" => "In Progress",
+                "review" => "Review",
+                "completed" => "Completed",
+                _ => loaded.Status
+            };
+            systemStatus = loaded.Status.ToLower() switch
+            {
+                "todo" => 0,
+                "inprogress" => 1,
+                "review" => 2,
+                "completed" => 3,
+                _ => 0
+            };
+        }
+
+        dto.StatusName = statusName;
+        dto.SystemStatus = systemStatus;
+
+        return dto;
     }
 
     private static TaskResponseDto MapToResponseDtoFromLoaded(TaskItem task) => new()
@@ -327,4 +544,38 @@ public class TaskService : ITaskService
         "urgent" => TaskItemPriority.Urgent,
         _ => TaskItemPriority.Medium
     };
+
+    public async Task<List<TaskHistoryResponseDto>> GetHistoryAsync(Guid taskId)
+    {
+        return await _context.TaskHistories
+            .Include(th => th.User)
+            .Where(th => th.TaskId == taskId)
+            .OrderByDescending(th => th.CreatedAt)
+            .Select(th => new TaskHistoryResponseDto
+            {
+                Id = th.Id,
+                Action = th.Action,
+                Details = th.Details,
+                CreatedAt = th.CreatedAt,
+                UserId = th.UserId,
+                UserName = th.User.Name,
+                UserAvatar = th.User.AvatarUrl
+            })
+            .ToListAsync();
+    }
+
+    private async Task LogHistoryAsync(Guid taskId, Guid userId, string action, string details)
+    {
+        var log = new TaskHistory
+        {
+            Id = Guid.NewGuid(),
+            TaskId = taskId,
+            UserId = userId,
+            Action = action,
+            Details = details,
+            CreatedAt = DateTime.UtcNow
+        };
+        _context.TaskHistories.Add(log);
+        await _context.SaveChangesAsync();
+    }
 }

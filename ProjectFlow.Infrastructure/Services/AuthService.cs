@@ -34,8 +34,10 @@ public class AuthService : IAuthService
 
         var role = !string.IsNullOrEmpty(input.Role) ? input.Role.ToLower() : "member";
         
-        // Find appropriate group
-        var groupName = role == "admin" ? "Super Admin" : "Team Member";
+        // Find appropriate group from configuration (Dynamic Mapping)
+        var mappingSection = _configuration.GetSection("RoleMapping");
+        var groupName = mappingSection[role] ?? mappingSection["default"] ?? "Team Member";
+        
         var group = await _context.AppGroups.FirstOrDefaultAsync(g => g.Description == groupName);
 
         var user = new AppUser

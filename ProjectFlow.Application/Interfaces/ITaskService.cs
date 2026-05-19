@@ -8,7 +8,8 @@ public interface ITaskService
     Task<List<TaskResponseDto>> GetByProjectAsync(Guid projectId);
     Task<TaskDetailResponseDto?> GetByIdAsync(Guid id);
     Task<List<TaskResponseDto>> GetMyTasksAsync(Guid userId);
-    Task<TaskResponseDto?> UpdateAsync(Guid id, UpdateTaskFormDto input);
-    Task<bool> UpdateStatusAsync(Guid id, string status);
+    Task<TaskResponseDto?> UpdateAsync(Guid id, UpdateTaskFormDto input, Guid userId);
+    Task<bool> UpdateStatusAsync(Guid id, string status, Guid userId);
     Task<bool> DeleteAsync(Guid id);
+    Task<List<TaskHistoryResponseDto>> GetHistoryAsync(Guid taskId);
 }

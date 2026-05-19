@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Mail, Lock, User, Phone, Loader2, ArrowRight, Sun, Moon, Users } from "lucide-react";
+import { Mail, Lock, User, Phone, Loader2, ArrowRight, Sun, Moon, Eye, EyeOff } from "lucide-react";
 import Link from "next/link";
 import api from "@/lib/api";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -16,6 +16,8 @@ export default function SignupPage() {
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -166,13 +168,20 @@ export default function SignupPage() {
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-blue-500 transition-colors" size={18} />
                 <input
                   id="password"
-                  type="password"
+                  type={showPassword ? "text" : "password"}
                   required
                   placeholder="••••••••"
-                  className="input-field w-full pl-10 h-11 bg-gray-50 dark:bg-white/5 border-gray-200 focus:bg-white transition-all"
+                  className="input-field w-full pl-10 pr-10 h-11 bg-gray-50 dark:bg-white/5 border-gray-200 focus:bg-white transition-all"
                   value={formData.password}
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-blue-500 transition-colors"
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
               </div>
               <p className="text-[10px] text-gray-500 mt-1 ml-1">
                 Must be at least 6 characters with uppercase, lowercase, number & symbol.
@@ -186,36 +195,20 @@ export default function SignupPage() {
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-blue-500 transition-colors" size={18} />
                 <input
                   id="confirmPassword"
-                  type="password"
+                  type={showConfirmPassword ? "text" : "password"}
                   required
                   placeholder="••••••••"
-                  className="input-field w-full pl-10 h-11 bg-gray-50 dark:bg-white/5 border-gray-200 focus:bg-white transition-all"
+                  className="input-field w-full pl-10 pr-10 h-11 bg-gray-50 dark:bg-white/5 border-gray-200 focus:bg-white transition-all"
                   value={formData.confirmPassword}
                   onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
                 />
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <label htmlFor="role" className="text-[11px] font-bold uppercase tracking-widest ml-1 text-[var(--text-secondary)]">
-                Your Role
-              </label>
-              <div className="relative group">
-                <Users className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-blue-500 transition-colors" size={18} />
-                <select
-                  id="role"
-                  aria-label="Select your role"
-                  className="input-field w-full pl-10 h-11 bg-gray-50 dark:bg-white/5 border-gray-200 focus:bg-white transition-all appearance-none cursor-pointer"
-                  value={formData.role}
-                  onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-blue-500 transition-colors"
                 >
-                  <option value="member">Team Member (Collaborator)</option>
-                  <option value="manager">Manager (Project Lead)</option>
-                  <option value="admin">Administrator (Project Control)</option>
-                </select>
-                <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
-                  <ArrowRight size={14} className="rotate-90" />
-                </div>
+                  {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
               </div>
             </div>
 

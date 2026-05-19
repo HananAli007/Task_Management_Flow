@@ -32,6 +32,16 @@ export interface Task {
   attachments_list?: Attachment[];
 }
 
+export interface TaskHistory {
+  id: string;
+  action: string;
+  details: string;
+  created_at: string;
+  user_id: string;
+  user_name: string;
+  user_avatar?: string;
+}
+
 export const taskApi = {
   getByProject: async (projectId: string) => {
     const response = await api.get(`/api/Tasks/project/${projectId}`);
@@ -75,5 +85,10 @@ export const taskApi = {
   delete: async (id: string) => {
     const response = await api.delete(`/api/Tasks/${id}`);
     return response.data;
+  },
+
+  getHistory: async (id: string) => {
+    const response = await api.get(`/api/Tasks/${id}/history`);
+    return response.data.data as TaskHistory[];
   }
 };

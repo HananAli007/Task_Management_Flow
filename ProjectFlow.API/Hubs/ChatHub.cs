@@ -95,4 +95,49 @@ public class ChatHub : Hub
         // Notify the reader's other sessions to clear the count
         await Clients.Group(receiverIdStr).SendAsync("MessagesRead", senderIdStr);
     }
+
+    public async Task InitiateCall(string receiverId, string sdpOffer, string callerName)
+    {
+        var senderId = Context.User?.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(senderId)) return;
+
+        // Relay incoming call with SDP offer and caller's name to the receiver group
+        await Clients.Group(receiverId).SendAsync("IncomingCall", senderId, sdpOffer, callerName);
+    }
+
+    public async Task AcceptCall(string callerId, string sdpAnswer)
+    {
+        var receiverId = Context.User?.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(receiverId)) return;
+
+        // Relay call acceptance with SDP answer to the caller group
+        await Clients.Group(callerId).SendAsync("CallAccepted", receiverId, sdpAnswer);
+    }
+
+    public async Task RejectCall(string callerId, string reason)
+    {
+        var receiverId = Context.User?.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(receiverId)) return;
+
+        // Relay call rejection to the caller group
+        await Clients.Group(callerId).SendAsync("CallRejected", receiverId, reason);
+    }
+
+    public async Task HangUpCall(string peerId)
+    {
+        var senderId = Context.User?.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(senderId)) return;
+
+        // Relay call ended to the other peer group
+        await Clients.Group(peerId).SendAsync("CallEnded", senderId);
+    }
+
+    public async Task SendIceCandidate(string peerId, string candidateJson)
+    {
+        var senderId = Context.User?.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(senderId)) return;
+
+        // Relay ICE candidate to the other peer group
+        await Clients.Group(peerId).SendAsync("ReceiveIceCandidate", senderId, candidateJson);
+    }
 }

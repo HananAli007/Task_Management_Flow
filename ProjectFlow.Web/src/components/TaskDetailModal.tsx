@@ -200,6 +200,20 @@ export function TaskDetailModal({ taskId, isOpen, onClose, onUpdate, onEdit }: T
     }
   };
 
+  const handleDeleteTask = async () => {
+    if (!task || !taskId) return;
+    if (!window.confirm("Are you sure you want to delete this task?")) return;
+    
+    try {
+      await taskApi.delete(taskId);
+      onClose();
+      onUpdate?.();
+    } catch (error) {
+      console.error("Failed to delete task", error);
+      alert("Failed to delete task");
+    }
+  };
+
   const handlePostComment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newComment.trim() || !taskId) return;
@@ -274,18 +288,29 @@ export function TaskDetailModal({ taskId, isOpen, onClose, onUpdate, onEdit }: T
                     </h1>
                   </div>
 
-                  {task && onEdit && (
-                    <button 
-                      onClick={() => {
-                        onEdit(task);
-                        onClose();
-                      }}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-500/10 hover:shadow-blue-500/20 hover:scale-105 active:scale-95 transition-all flex-shrink-0"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-pencil"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
-                      Edit Task
-                    </button>
-                  )}
+                  <div className="flex gap-2">
+                    {task && onEdit && (
+                      <button 
+                        onClick={() => {
+                          onEdit(task);
+                          onClose();
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-500/10 hover:shadow-blue-500/20 hover:scale-105 active:scale-95 transition-all flex-shrink-0"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-pencil"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                        Edit Task
+                      </button>
+                    )}
+                    {task && (
+                      <button 
+                        onClick={handleDeleteTask}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white rounded-xl text-xs font-bold shadow-md shadow-red-500/10 hover:shadow-red-500/20 hover:scale-105 active:scale-95 transition-all flex-shrink-0"
+                      >
+                        <Trash2 size={14} />
+                        Delete Task
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {/* Tags */}
@@ -580,7 +605,7 @@ export function TaskDetailModal({ taskId, isOpen, onClose, onUpdate, onEdit }: T
                   }`}
                 >
                   <Clock size={14} />
-                  History ({history.length})
+                  History
                 </button>
               </div>
               

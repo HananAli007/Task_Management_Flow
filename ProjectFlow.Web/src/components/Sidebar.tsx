@@ -35,7 +35,12 @@ export function Sidebar() {
   const { theme, toggleTheme } = useThemeStore();
   const { canViewScreen } = usePermission();
 
-  const isDark = theme === "dark";
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const isDark = mounted ? theme === "dark" : true;
 
   if (!user && pathname === "/login") return null;
 
@@ -60,7 +65,7 @@ export function Sidebar() {
       {/* Navigation */}
       <nav className="flex-1 px-4 space-y-2 py-4">
         {navItems.map((item) => {
-          if (item.screen !== "Settings" && item.screen !== "Dashboard" && !canViewScreen(item.screen)) return null;
+          if (item.screen !== "Settings" && item.screen !== "Dashboard" && (!mounted || !canViewScreen(item.screen))) return null;
           
           const isActive = pathname === item.href;
           return (
@@ -137,7 +142,7 @@ export function Sidebar() {
         </button>
 
         {/* User card */}
-        {user && (
+        {mounted && user && (
           <div
             className="mt-2 flex items-center gap-3 px-4 py-2 rounded-xl border bg-[var(--bg-card)] border-[var(--border-color)]"
           >

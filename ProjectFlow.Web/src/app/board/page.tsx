@@ -98,6 +98,20 @@ export default function Board() {
     }
   }, [activeProjectId]);
 
+  useEffect(() => {
+    const handleOpenTaskDetail = (e: any) => {
+      const taskId = e.detail?.taskId;
+      if (taskId) {
+        setSelectedTaskId(taskId);
+        setIsDetailModalOpen(true);
+      }
+    };
+    window.addEventListener('open-task-detail', handleOpenTaskDetail);
+    return () => {
+      window.removeEventListener('open-task-detail', handleOpenTaskDetail);
+    };
+  }, []);
+
   const fetchInitialData = async () => {
     try {
       const data = await projectApi.getAll();
@@ -508,6 +522,28 @@ export default function Board() {
                                       <span className="text-[10px] font-bold uppercase tracking-wider text-[#7e8194] dark:text-[#a0a3bd]">
                                         {task.project_name}
                                       </span>
+                                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleEditTask(task);
+                                          }}
+                                          className="p-1 hover:bg-black/5 dark:hover:bg-white/10 rounded text-gray-400 hover:text-blue-500 transition-colors"
+                                          title="Edit Task"
+                                        >
+                                          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-pencil"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                                        </button>
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleDeleteTask(task.id);
+                                          }}
+                                          className="p-1 hover:bg-red-500/10 rounded text-gray-400 hover:text-red-500 transition-colors"
+                                          title="Delete Task"
+                                        >
+                                          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-trash-2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
+                                        </button>
+                                      </div>
                                     </div>
 
                                     <h4 className="text-[15px] font-bold mb-4 leading-tight theme-text-primary group-hover:text-blue-500 transition-colors">
@@ -626,6 +662,7 @@ export default function Board() {
           onClose={() => setIsDetailModalOpen(false)}
           taskId={selectedTaskId}
           onUpdate={() => activeProjectId && fetchTasks(activeProjectId)}
+          onEdit={handleEditTask}
         />
       )}
 

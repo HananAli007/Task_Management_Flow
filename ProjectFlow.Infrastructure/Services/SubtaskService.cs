@@ -12,11 +12,13 @@ public class SubtaskService : ISubtaskService
 {
     private readonly AppDbContext _context;
     private readonly IAttachmentService _attachmentService;
+    private readonly INotificationService _notificationService;
 
-    public SubtaskService(AppDbContext context, IAttachmentService attachmentService)
+    public SubtaskService(AppDbContext context, IAttachmentService attachmentService, INotificationService notificationService)
     {
         _context = context;
         _attachmentService = attachmentService;
+        _notificationService = notificationService;
     }
 
     public async Task<SubtaskResponseDto> CreateAsync(Guid taskId, CreateSubtaskFormDto input, Guid creatorId)
@@ -39,6 +41,37 @@ public class SubtaskService : ISubtaskService
         };
         _context.Subtasks.Add(subtask);
         await _context.SaveChangesAsync();
+
+        // Log Subtask Creation History
+        await LogHistoryAsync(taskId, creatorId, "SubtaskCreate", $"Created subtask '{subtask.Title}'");
+        
+        if (subtask.AssigneeId.HasValue && subtask.AssigneeId.Value != Guid.Empty)
+        {
+            var assigneeUser = await _context.Users.FindAsync(subtask.AssigneeId.Value);
+            var assigneeName = assigneeUser?.Name ?? "Unknown";
+            await LogHistoryAsync(taskId, creatorId, "SubtaskAssign", $"Assigned subtask '{subtask.Title}' to {assigneeName}");
+
+            try
+            {
+                var taskItem = await _context.TaskItems.FindAsync(taskId);
+                var creatorUser = await _context.Users.FindAsync(creatorId);
+                var creatorName = creatorUser?.Name ?? "A team member";
+
+                await _notificationService.SendNotificationAsync(
+                    subtask.AssigneeId.Value,
+                    "SubtaskAssignment",
+                    "New Subtask Assigned",
+                    $"Subtask '{subtask.Title}' of task '{taskItem?.Title ?? "General"}' has been assigned to you by {creatorName}.",
+                    taskId.ToString(),
+                    taskItem?.Title,
+                    ""
+                );
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[NOTIFICATION ERROR] Failed to send subtask assignment notification: {ex.Message}");
+            }
+        }
 
         if (input.Attachments != null && input.Attachments.Count > 0)
         {
@@ -107,7 +140,7 @@ public class SubtaskService : ISubtaskService
             }).ToListAsync();
     }
 
-    public async Task<SubtaskResponseDto?> UpdateAsync(Guid id, UpdateSubtaskFormDto input)
+    public async Task<SubtaskResponseDto?> UpdateAsync(Guid id, UpdateSubtaskFormDto input, Guid userId)
     {
         var subtask = await _context.Subtasks
             .Include(s => s.Attachments)
@@ -116,6 +149,9 @@ public class SubtaskService : ISubtaskService
             .FirstOrDefaultAsync(s => s.Id == id);
             
         if (subtask == null) return null;
+
+        var oldAssigneeId = subtask.AssigneeId;
+        var oldIsCompleted = subtask.IsCompleted;
         
         subtask.Title = input.Title;
         subtask.IsCompleted = input.IsCompleted;
@@ -126,6 +162,48 @@ public class SubtaskService : ISubtaskService
             await _attachmentService.UploadMultipleAsync(input.NewAttachments, AttachmentSourceType.Subtask, subtask.Id, subtask.CreatorId);
         }
         await _context.SaveChangesAsync();
+
+        // Log Subtask Edit/Assign/Completion History
+        if (oldIsCompleted != input.IsCompleted)
+        {
+            var statusStr = input.IsCompleted ? "completed" : "incomplete";
+            await LogHistoryAsync(subtask.TaskId, userId, "SubtaskEdit", $"Marked subtask '{subtask.Title}' as {statusStr}");
+        }
+        
+        if (oldAssigneeId != input.AssigneeId)
+        {
+            if (input.AssigneeId.HasValue && input.AssigneeId.Value != Guid.Empty)
+            {
+                var assigneeUser = await _context.Users.FindAsync(input.AssigneeId.Value);
+                var assigneeName = assigneeUser?.Name ?? "Unknown";
+                await LogHistoryAsync(subtask.TaskId, userId, "SubtaskAssign", $"Assigned subtask '{subtask.Title}' to {assigneeName}");
+
+                try
+                {
+                    var taskItem = await _context.TaskItems.FindAsync(subtask.TaskId);
+                    var updaterUser = await _context.Users.FindAsync(userId);
+                    var updaterName = updaterUser?.Name ?? "A team member";
+
+                    await _notificationService.SendNotificationAsync(
+                        input.AssigneeId.Value,
+                        "SubtaskAssignment",
+                        "Subtask Assigned to You",
+                        $"Subtask '{subtask.Title}' of task '{taskItem?.Title ?? "General"}' has been assigned to you by {updaterName}.",
+                        subtask.TaskId.ToString(),
+                        taskItem?.Title,
+                        ""
+                    );
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[NOTIFICATION ERROR] Failed to send subtask reassignment notification: {ex.Message}");
+                }
+            }
+            else
+            {
+                await LogHistoryAsync(subtask.TaskId, userId, "SubtaskAssign", $"Unassigned subtask '{subtask.Title}'");
+            }
+        }
         
         // Refresh to get navigation properties if they changed
         var updatedSubtask = await _context.Subtasks
@@ -160,8 +238,23 @@ public class SubtaskService : ISubtaskService
     {
         var subtask = await _context.Subtasks.FindAsync(id);
         if (subtask == null) return false;
-        _context.Subtasks.Remove(subtask);
+        subtask.IsDeleted = true;
         await _context.SaveChangesAsync();
         return true;
+    }
+
+    private async Task LogHistoryAsync(Guid taskId, Guid userId, string action, string details)
+    {
+        var log = new TaskHistory
+        {
+            Id = Guid.NewGuid(),
+            TaskId = taskId,
+            UserId = userId,
+            Action = action,
+            Details = details,
+            CreatedAt = DateTime.UtcNow
+        };
+        _context.TaskHistories.Add(log);
+        await _context.SaveChangesAsync();
     }
 }

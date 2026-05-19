@@ -12,10 +12,30 @@ using ProjectFlow.Infrastructure.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// ===== Database Context =====
+// ===== Database Context — Dynamic Selection =====
+var environment = builder.Environment.EnvironmentName;
+Console.WriteLine($"\n[SYSTEM] Running in Environment: {environment}");
+
+var activeConnName = builder.Configuration.GetValue<string>("DatabaseSettings:ActiveConnection") ?? "DefaultConnection";
+var connectionString = builder.Configuration.GetConnectionString(activeConnName);
+
+if (string.IsNullOrEmpty(connectionString))
+{
+    Console.WriteLine($"[CRITICAL] Connection string '{activeConnName}' not found in configuration!");
+}
+else 
+{
+    var server = connectionString.Split(';').FirstOrDefault(s => s.StartsWith("Server=", StringComparison.OrdinalIgnoreCase) || s.StartsWith("Data Source=", StringComparison.OrdinalIgnoreCase));
+    Console.WriteLine($"[DATABASE] Using Connection: {activeConnName}");
+    Console.WriteLine($"[DATABASE] Target Server: {server}\n");
+}
+
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"), sqlOptions =>
-        sqlOptions.EnableRetryOnFailure(maxRetryCount: 5, maxRetryDelay: TimeSpan.FromSeconds(10), errorNumbersToAdd: null)));
+    options.UseSqlServer(connectionString, sqlOptions =>
+        sqlOptions.EnableRetryOnFailure(
+            maxRetryCount: 10, 
+            maxRetryDelay: TimeSpan.FromSeconds(30), 
+            errorNumbersToAdd: null)));
 
 // ===== ASP.NET Core Identity =====
 builder.Services.AddIdentity<AppUser, IdentityRole<Guid>>(options =>
@@ -64,7 +84,6 @@ builder.Services.AddAuthentication(options =>
     {
         OnMessageReceived = context =>
         {
-            // SignalR sends the token in the query string "access_token"
             var accessToken = context.Request.Query["access_token"];
             var path = context.HttpContext.Request.Path;
             if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs"))
@@ -73,7 +92,6 @@ builder.Services.AddAuthentication(options =>
                 return Task.CompletedTask;
             }
 
-            // Standard API calls use Authorization header
             var authHeader = context.Request.Headers.Authorization.ToString();
             if (string.IsNullOrEmpty(authHeader)) return Task.CompletedTask;
 
@@ -81,7 +99,6 @@ builder.Services.AddAuthentication(options =>
                 ? authHeader[7..].Trim()
                 : authHeader.Trim();
 
-            // Handle cases where user pastes "token", "refresh_token": "..."
             if (token.Contains("\","))
             {
                 token = token.Split("\",")[0].Trim('"');
@@ -99,12 +116,6 @@ builder.Services.AddAuthentication(options =>
             var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<Program>>();
             logger.LogError(context.Exception, "Authentication failed.");
             return Task.CompletedTask;
-        },
-        OnTokenValidated = context =>
-        {
-            var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<Program>>();
-            logger.LogInformation("Token validated successfully.");
-            return Task.CompletedTask;
         }
     };
 });
@@ -121,6 +132,7 @@ builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddScoped<IColumnService, ColumnService>();
 builder.Services.AddScoped<ITagService, TagService>();
 builder.Services.AddScoped<IFileStorageService, LocalFileStorageService>();
+builder.Services.AddScoped<INotificationService, ProjectFlow.API.Services.NotificationService>();
 builder.Services.AddSignalR().AddJsonProtocol(options =>
 {
     options.PayloadSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
@@ -145,7 +157,6 @@ builder.Services.AddSwaggerGen(options =>
         Description = "Task Management System API"
     });
 
-    // Use Http/Bearer to allow Swagger UI to handle the prefix
     options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
         Name = "Authorization",
@@ -153,7 +164,7 @@ builder.Services.AddSwaggerGen(options =>
         Scheme = "bearer",
         BearerFormat = "JWT",
         In = ParameterLocation.Header,
-        Description = "Paste ONLY the JWT token below (do not include 'Bearer ' or other text)."
+        Description = "Paste ONLY the JWT token below."
     });
 
     options.AddSecurityRequirement(new OpenApiSecurityRequirement
@@ -174,6 +185,7 @@ builder.Services.AddSwaggerGen(options =>
 
 // ===== CORS =====
 var allowedOrigins = builder.Configuration.GetSection("CorsSettings:AllowedOrigins").Get<string[]>() ?? Array.Empty<string>();
+Console.WriteLine($"[CORS] Allowed Origins: {string.Join(", ", allowedOrigins)}");
 
 builder.Services.AddCors(options =>
 {
@@ -182,9 +194,11 @@ builder.Services.AddCors(options =>
         policy.WithOrigins(allowedOrigins)
               .AllowAnyMethod()
               .AllowAnyHeader()
-              .AllowCredentials();
+              .AllowCredentials()
+              .SetIsOriginAllowedToAllowWildcardSubdomains();
     });
 });
+
 
 var app = builder.Build();
 

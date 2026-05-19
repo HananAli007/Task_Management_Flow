@@ -132,3 +132,35 @@ public class TaskDetailResponseDto : TaskResponseDto
     [JsonProperty("attachments_list")]
     public List<AttachmentDto> AttachmentsList { get; set; } = new();
 }
+
+public class TaskHistoryResponseDto
+{
+    [JsonPropertyName("id")]
+    [JsonProperty("id")]
+    public Guid Id { get; set; }
+
+    [JsonPropertyName("action")]
+    [JsonProperty("action")]
+    public string Action { get; set; } = string.Empty;
+
+    [JsonPropertyName("details")]
+    [JsonProperty("details")]
+    public string Details { get; set; } = string.Empty;
+
+    [JsonPropertyName("created_at")]
+    [JsonProperty("created_at")]
+    public DateTime CreatedAt { get; set; }
+
+    [JsonPropertyName("user_id")]
+    [JsonProperty("user_id")]
+    public Guid UserId { get; set; }
+
+    [JsonPropertyName("user_name")]
+    [JsonProperty("user_name")]
+    public string UserName { get; set; } = string.Empty;
+
+    [JsonPropertyName("user_avatar")]
+    [JsonProperty("user_avatar")]
+    public string? UserAvatar { get; set; }
+}
+

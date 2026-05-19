@@ -20,6 +20,7 @@ public class AppDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>, Guid>
     public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
     public DbSet<PasswordResetLog> PasswordResetLogs => Set<PasswordResetLog>();
     public DbSet<BoardColumn> BoardColumns => Set<BoardColumn>();
+    public DbSet<TaskHistory> TaskHistories => Set<TaskHistory>();
 
     // Permission System
     public DbSet<AppGroup> AppGroups => Set<AppGroup>();
@@ -317,6 +318,25 @@ public class AppDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>, Guid>
             e.HasOne(c => c.Project)
                 .WithMany()
                 .HasForeignKey(c => c.ProjectId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ===== TaskHistory =====
+        builder.Entity<TaskHistory>(e =>
+        {
+            e.HasKey(th => th.Id);
+            e.Property(th => th.Action).HasMaxLength(50).IsRequired();
+            e.Property(th => th.Details).HasMaxLength(1000);
+            e.Property(th => th.CreatedAt).HasDefaultValueSql("GETDATE()");
+
+            e.HasOne(th => th.Task)
+                .WithMany()
+                .HasForeignKey(th => th.TaskId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasOne(th => th.User)
+                .WithMany()
+                .HasForeignKey(th => th.UserId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
     }

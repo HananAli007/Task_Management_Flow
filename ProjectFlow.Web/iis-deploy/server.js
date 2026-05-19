@@ -4,7 +4,9 @@
 
 process.env.NODE_ENV = 'production';
 const iisPort = process.env.PORT || 3000;
-const BACKEND_BASE = 'http://192.168.18.69:8080';
+
+// Use environment variable from IIS/web.config or fallback
+const BACKEND_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
 
 const http = require('http');
 const path = require('path');
@@ -24,11 +26,13 @@ const handle = nextServer.getRequestHandler();
 
 // Helper to resolve backend paths
 function getTargetPath(url) {
+    // Check for general API proxy path
     if (url.startsWith('/backend-api/')) {
         return url.replace('/backend-api/', '/api/');
     }
-    if (url.startsWith('/backend-hubs/')) {
-        return url.replace('/backend-hubs/', '/hubs/');
+    // Check for SignalR Hubs proxy path
+    if (url.startsWith('/hubs/')) {
+        return url; // Keep /hubs/ as it matches backend
     }
     return null;
 }
@@ -38,6 +42,7 @@ const server = http.createServer(async (req, res) => {
 
     if (targetPath) {
         const finalUrl = `${BACKEND_BASE}${targetPath}`;
+        console.log(`[Proxy] ${req.url} -> ${finalUrl}`);
         
         const proxyReq = http.request(finalUrl, {
             method: req.method,
@@ -50,7 +55,7 @@ const server = http.createServer(async (req, res) => {
         proxyReq.on('error', (err) => {
             console.error(`[Proxy Error] ${req.url} -> ${err.message}`);
             res.statusCode = 502;
-            res.end('Backend Unavailable');
+            res.end(`Backend Unavailable: ${err.message}`);
         });
 
         req.pipe(proxyReq);
@@ -61,6 +66,7 @@ const server = http.createServer(async (req, res) => {
     try {
         await handle(req, res);
     } catch (err) {
+        console.error(`[Next.js Error] ${err.message}`);
         res.statusCode = 500;
         res.end('Internal Server Error');
     }
@@ -75,11 +81,11 @@ server.on('upgrade', (req, socket, head) => {
     if (targetPath) {
         console.log(`[WS Upgrade] Proxying ${req.url} -> ${targetPath}`);
         
-        const url = new URL(BACKEND_BASE);
-        const proxySocket = net.connect(url.port || 80, url.hostname, () => {
+        const targetUrl = new URL(BACKEND_BASE);
+        const proxySocket = net.connect(targetUrl.port || (targetUrl.protocol === 'https:' ? 443 : 80), targetUrl.hostname, () => {
             // Send the raw upgrade request to backend
             proxySocket.write(
-                `${req.method} ${targetPath} HTTP/1.1\r\n` +
+                `${req.method} ${targetPath}${req.url.includes('?') ? '?' + req.url.split('?')[1] : ''} HTTP/1.1\r\n` +
                 Object.keys(req.headers)
                     .map(h => `${h}: ${req.headers[h]}`)
                     .join('\r\n') +
@@ -99,11 +105,14 @@ server.on('upgrade', (req, socket, head) => {
         
         socket.on('error', () => proxySocket.destroy());
     } else {
+        // Not a proxied path, let Next.js handle it if it supports upgrades, 
+        // otherwise destroy if it's unexpected.
         socket.destroy();
     }
 });
 
 server.listen(iisPort, () => {
     console.log(`[ProjectFlow] ✓ Server running on port ${iisPort}`);
-    console.log(`[ProjectFlow] ✓ Proxying to ${BACKEND_BASE}`);
-});
+    console.log(`[ProjectFlow] ✓ Environment: ${process.env.NODE_ENV}`);
+    console.log(`[ProjectFlow] ✓ Backend URL: ${BACKEND_BASE}`);
+});

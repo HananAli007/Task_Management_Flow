@@ -39,7 +39,7 @@ public class SubtasksController : ControllerBase
     [Consumes("multipart/form-data")]
     public async Task<IActionResult> Update(Guid id, [FromForm] UpdateSubtaskFormDto input)
     {
-        var result = await _subtaskService.UpdateAsync(id, input);
+        var result = await _subtaskService.UpdateAsync(id, input, GetUserId());
         if (result == null) return NotFound(new ApiErrorResponse { Error = new() { Code = "not_found", Message = "Subtask not found." } });
         return Ok(ApiResponse<SubtaskResponseDto>.SuccessResult(result, "Subtask updated successfully."));
     }

@@ -57,6 +57,65 @@ export const SignalRProvider: React.FC<{ children: React.ReactNode }> = ({ child
     };
   }, []);
 
+  // Request desktop notification permission when token is active
+  useEffect(() => {
+    if (token && typeof window !== 'undefined' && 'Notification' in window) {
+      if (Notification.permission === 'default') {
+        Notification.requestPermission();
+      }
+    }
+  }, [token]);
+
+  // Audio synthesizer for premium pleasing enterprise double-tone notification sound
+  const playNotificationSound = useCallback(() => {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
+      osc.frequency.setValueAtTime(880, ctx.currentTime + 0.12); // A5
+      
+      gain.gain.setValueAtTime(0, ctx.currentTime);
+      gain.gain.linearRampToValueAtTime(0.1, ctx.currentTime + 0.05);
+      gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.3);
+      
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.3);
+    } catch (e) {
+      console.warn("Sound play failed", e);
+    }
+  }, []);
+
+  // Standard premium desktop notification pusher
+  const showDesktopNotification = useCallback((title: string, body: string, taskId?: string | null, senderId?: string, senderName?: string) => {
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+      const options: NotificationOptions = {
+        body: body,
+        icon: '/favicon.ico',
+        tag: taskId ? `task-${taskId}` : senderId ? `chat-${senderId}` : 'general-notification',
+        requireInteraction: false
+      };
+      
+      const notification = new Notification(title, options);
+      
+      notification.onclick = () => {
+        window.focus();
+        if (taskId) {
+          window.dispatchEvent(new CustomEvent('open-task-detail', { detail: { taskId } }));
+        } else if (senderId && senderName) {
+          window.dispatchEvent(new CustomEvent('open-chat', { detail: { userId: senderId, name: senderName } }));
+        }
+        notification.close();
+      };
+    }
+  }, []);
+
   const markAsRead = useCallback((userId: string) => {
     setUnreadCounts(prev => {
       const next = { ...prev };
@@ -135,6 +194,13 @@ export const SignalRProvider: React.FC<{ children: React.ReactNode }> = ({ child
             [senderId]: (prev[senderId] || 0) + 1
           }));
 
+          // Play premium pleasing tone
+          playNotificationSound();
+
+          // Push Desktop Notification
+          const cleanContent = message.content.length > 80 ? message.content.substring(0, 80) + '...' : message.content;
+          showDesktopNotification(message.senderName || 'New Chat Message', cleanContent, null, senderId, message.senderName);
+
           import('sonner').then(({ toast }) => {
             toast(message.senderName || 'New Message', {
               description: message.content.length > 50 ? message.content.substring(0, 50) + '...' : message.content,
@@ -148,6 +214,28 @@ export const SignalRProvider: React.FC<{ children: React.ReactNode }> = ({ child
           });
         }
       }
+    });
+
+    connection.on('NotificationReceived', (notification: any) => {
+      // Play premium pleasing tone
+      playNotificationSound();
+
+      // Push Desktop Notification
+      showDesktopNotification(notification.title, notification.message, notification.taskId);
+
+      // Push custom in-app Toast
+      import('sonner').then(({ toast }) => {
+        toast.info(notification.title, {
+          description: notification.message,
+          duration: 7000,
+          action: notification.taskId ? {
+            label: 'View Task',
+            onClick: () => {
+              window.dispatchEvent(new CustomEvent('open-task-detail', { detail: { taskId: notification.taskId } }));
+            }
+          } : undefined
+        });
+      });
     });
 
     connection.on('MessagesRead', (senderId: string) => {
