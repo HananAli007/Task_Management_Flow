@@ -833,43 +833,64 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ user, onClose }) => {
             {formatTimerStr(callDuration)}
           </div>
 
-          <div className="flex flex-col gap-6 items-center pb-8">
-            <div className="flex items-center gap-6 justify-center">
-              <button 
-                type="button"
-                onClick={() => setIsMuted(!isMuted)}
-                title="Mute call"
-                className={`p-4 rounded-full transition-all border ${
-                  isMuted 
-                    ? 'bg-red-500/25 border-red-500/40 text-red-500 hover:bg-red-500/35' 
-                    : 'bg-white/10 border-white/20 hover:bg-white/20 text-white hover:scale-105 active:scale-95'
-                }`}
-              >
-                {isMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
-              </button>
+          <div className="flex flex-col gap-8 items-center pb-8">
+            <div className="flex items-center gap-8 justify-center">
+              {/* Mute Button */}
+              <div className="flex flex-col items-center gap-2">
+                <button 
+                  type="button"
+                  onClick={() => setIsMuted(!isMuted)}
+                  title={isMuted ? "Unmute Call" : "Mute Call"}
+                  className={`w-14 h-14 rounded-full flex items-center justify-center transition-all border-2 shadow-lg ${
+                    isMuted 
+                      ? 'bg-red-500 border-red-400 text-white hover:bg-red-600 hover:scale-105 active:scale-95' 
+                      : 'bg-slate-800/90 border-slate-700 text-slate-200 hover:bg-slate-700 hover:text-white hover:scale-105 active:scale-95'
+                  }`}
+                >
+                  {isMuted ? <VolumeX size={22} /> : <Volume2 size={22} />}
+                </button>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  {isMuted ? 'Muted' : 'Mute'}
+                </span>
+              </div>
               
-              <button 
-                type="button"
-                onClick={toggleHold}
-                disabled={callState === 'dialing' || callState === 'ringing' || callState === 'ended'}
-                className={`px-8 py-3.5 rounded-2xl text-xs font-bold uppercase tracking-wider transition-all border ${
-                  callState === 'onhold'
-                    ? 'bg-blue-600 border-blue-500 text-white hover:bg-blue-500 hover:scale-105 active:scale-95'
-                    : 'bg-white/10 border-white/20 hover:bg-white/20 text-white disabled:opacity-30 disabled:cursor-not-allowed hover:scale-105 active:scale-95'
-                }`}
-              >
-                Hold
-              </button>
+              {/* Hold Button */}
+              <div className="flex flex-col items-center gap-2">
+                <button 
+                  type="button"
+                  onClick={toggleHold}
+                  disabled={callState === 'dialing' || callState === 'ringing' || callState === 'ended'}
+                  title={callState === 'onhold' ? "Resume Call" : "Hold Call"}
+                  className={`w-14 h-14 rounded-full flex items-center justify-center transition-all border-2 shadow-lg ${
+                    callState === 'onhold'
+                      ? 'bg-amber-500 border-amber-400 text-black hover:bg-amber-600 hover:scale-105 active:scale-95'
+                      : 'bg-slate-800/90 border-slate-700 text-slate-200 hover:bg-slate-700 hover:text-white disabled:bg-slate-900/60 disabled:border-slate-850 disabled:text-slate-600 disabled:scale-100 disabled:opacity-40 hover:scale-105 active:scale-95'
+                  }`}
+                >
+                  {callState === 'onhold' ? <Play size={22} /> : <Pause size={22} />}
+                </button>
+                <span className={`text-[10px] font-bold uppercase tracking-wider ${
+                  callState === 'dialing' || callState === 'ringing' || callState === 'ended' 
+                    ? 'text-slate-600' 
+                    : 'text-slate-400'
+                }`}>
+                  {callState === 'onhold' ? 'Resume' : 'Hold'}
+                </span>
+              </div>
             </div>
 
-            <button 
-              type="button"
-              onClick={() => hangUpCall()}
-              title="Hang up"
-              className="p-4 bg-red-600 hover:bg-red-500 rounded-full transition-all text-white shadow-xl shadow-red-600/30 hover:scale-105 active:scale-95"
-            >
-              <PhoneOff size={24} />
-            </button>
+            {/* End Call Button */}
+            <div className="flex flex-col items-center gap-2">
+              <button 
+                type="button"
+                onClick={() => hangUpCall()}
+                title="Hang up"
+                className="w-16 h-16 bg-red-600 hover:bg-red-500 border-2 border-red-500 rounded-full flex items-center justify-center transition-all text-white shadow-xl shadow-red-600/30 hover:scale-110 active:scale-95"
+              >
+                <PhoneOff size={26} />
+              </button>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-red-500">End Call</span>
+            </div>
           </div>
         </div>
       )}
@@ -941,12 +962,12 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ user, onClose }) => {
           /* Calling History list */
           <div className="space-y-4 py-2 animate-in fade-in duration-300">
             <h4 className="text-[10px] font-bold uppercase tracking-wider opacity-60 text-slate-400">Calling History</h4>
-            {callHistory.filter(c => c.userId === user.id).length === 0 ? (
+            {callHistory.filter(c => c.userId?.toLowerCase() === user.id?.toLowerCase()).length === 0 ? (
               <div className="text-center py-12 opacity-30 text-xs">
                 No recent calls recorded.
               </div>
             ) : (
-              callHistory.filter(c => c.userId === user.id).map(log => (
+              callHistory.filter(c => c.userId?.toLowerCase() === user.id?.toLowerCase()).map(log => (
                 <div key={log.id} className="flex items-center justify-between p-3.5 bg-black/5 dark:bg-white/[0.02] border border-black/5 dark:border-white/5 rounded-2xl">
                   <div className="flex items-center gap-3">
                     <div className={`p-2.5 rounded-xl ${log.type === 'missed' ? 'bg-red-500/10 text-red-500' : 'bg-green-500/10 text-green-500'}`}>
@@ -985,14 +1006,15 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ user, onClose }) => {
             </div>
           ) : (
             messages.map((msg) => {
-              const senderId = msg.senderId || msg.sender_id;
-              const isMe = senderId !== user.id;
-              const time = msg.sentAt || msg.sent_at;
-              const type = msg.messageType || msg.message_type || 'text';
-              const url = msg.attachmentUrl || msg.attachment_url;
+              const senderId = msg.senderId || msg.sender_id || msg.SenderId;
+              const isMe = senderId?.toLowerCase() !== user.id?.toLowerCase();
+              const time = msg.sentAt || msg.sent_at || msg.SentAt;
+              const type = msg.messageType || msg.message_type || msg.MessageType || 'text';
+              const url = msg.attachmentUrl || msg.attachment_url || msg.AttachmentUrl;
+              const content = msg.content || msg.Content || '';
               
               return (
-                <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+                <div key={msg.id || msg.Id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
                   <div className={`max-w-[85%] shadow-sm overflow-hidden ${
                     isMe 
                       ? 'bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-2xl rounded-tr-none' 
@@ -1016,24 +1038,24 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ user, onClose }) => {
                       </div>
                     ) : type === 'voice' ? (
                       /* Stunning Dynamic Voice Player */
-                      <VoicePlayer url={url || msg.content} isMe={isMe} />
+                      <VoicePlayer url={url || content} isMe={isMe} />
                     ) : type === 'call' ? (
                       <div className="p-3.5 flex items-center gap-3 min-w-[200px]">
                         <div className={`p-2.5 rounded-xl ${
-                          msg.content.includes("Missed") || msg.content.includes("Declined") 
+                          content.includes("Missed") || content.includes("Declined") 
                             ? 'bg-red-500/10 text-red-500' 
                             : 'bg-green-500/10 text-green-500'
                         }`}>
-                          <Phone size={16} className={msg.content.includes("Missed") ? 'rotate-[135deg]' : ''} />
+                          <Phone size={16} className={content.includes("Missed") ? 'rotate-[135deg]' : ''} />
                         </div>
                         <div>
-                          <p className="text-xs font-bold">{msg.content}</p>
+                          <p className="text-xs font-bold">{content}</p>
                           <p className="text-[9px] opacity-70">Voice Call</p>
                         </div>
                       </div>
                     ) : (
                       <div className="px-4 py-2.5">
-                        <p className="text-[13px] leading-relaxed selection:bg-white/30">{msg.content}</p>
+                        <p className="text-[13px] leading-relaxed selection:bg-white/30">{content}</p>
                       </div>
                     )}
                   </div>

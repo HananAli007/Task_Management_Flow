@@ -209,6 +209,15 @@ export const SignalRProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
 
     sendMessage(incomingCall.callerId, "Missed Call", null, "call").catch(console.error);
+    
+    // Log call to local history
+    useChatStore.getState().addCallLog({
+      userId: incomingCall.callerId,
+      userName: incomingCall.callerName,
+      avatarUrl: incomingCall.callerAvatar,
+      type: 'missed',
+    });
+
     setIncomingCall(null);
     setIsCallExpanded(false);
   }, [incomingCall, sendMessage, setIncomingCall]);
@@ -306,6 +315,15 @@ export const SignalRProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
     
     sendMessage(incomingCall.callerId, "Declined Call", null, "call").catch(console.error);
+
+    // Log call to local history
+    useChatStore.getState().addCallLog({
+      userId: incomingCall.callerId,
+      userName: incomingCall.callerName,
+      avatarUrl: incomingCall.callerAvatar,
+      type: 'missed',
+    });
+
     setIncomingCall(null);
   };
 
