@@ -21,14 +21,30 @@ var connectionString = builder.Configuration.GetConnectionString(activeConnName)
 
 if (string.IsNullOrEmpty(connectionString))
 {
-    Console.WriteLine($"[CRITICAL] Connection string '{activeConnName}' not found in configuration!");
+    Console.WriteLine($"[CRITICAL] Connection string '{activeConnName}' not found in configuration! Searching fallbacks...");
+    
+    connectionString = builder.Configuration.GetConnectionString("ProductionConnection")
+                       ?? builder.Configuration.GetConnectionString("LocalConnection")
+                       ?? builder.Configuration.GetConnectionString("DefaultConnection")
+                       ?? builder.Configuration.GetConnectionString("LocalDbConnection");
+
+    if (string.IsNullOrEmpty(connectionString))
+    {
+        Console.WriteLine("[CRITICAL] All fallback configuration connection strings are null! Appending environment-based default connection string.");
+        if (environment.Equals("Production", StringComparison.OrdinalIgnoreCase))
+        {
+            connectionString = "Server=localhost;Database=Task_Management_System;User Id=sa;Password=sa123456;TrustServerCertificate=True;MultipleActiveResultSets=True;Connection Timeout=30;";
+        }
+        else
+        {
+            connectionString = "Server=localhost\\SQLEXPRESS;Database=Task_Management_System;Integrated Security=True;TrustServerCertificate=True;MultipleActiveResultSets=True;Connection Timeout=30;";
+        }
+    }
 }
-else 
-{
-    var server = connectionString.Split(';').FirstOrDefault(s => s.StartsWith("Server=", StringComparison.OrdinalIgnoreCase) || s.StartsWith("Data Source=", StringComparison.OrdinalIgnoreCase));
-    Console.WriteLine($"[DATABASE] Using Connection: {activeConnName}");
-    Console.WriteLine($"[DATABASE] Target Server: {server}\n");
-}
+
+var server = connectionString.Split(';').FirstOrDefault(s => s.StartsWith("Server=", StringComparison.OrdinalIgnoreCase) || s.StartsWith("Data Source=", StringComparison.OrdinalIgnoreCase));
+Console.WriteLine($"[DATABASE] Using Connection: {activeConnName}");
+Console.WriteLine($"[DATABASE] Target Server: {server}\n");
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(connectionString, sqlOptions =>
