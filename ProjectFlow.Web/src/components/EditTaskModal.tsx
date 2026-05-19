@@ -3,6 +3,7 @@ import { X, Loader2 } from "lucide-react";
 import { taskApi, Task } from "@/lib/api/tasks";
 import { projectApi, Project } from "@/lib/api/projects";
 import { tagApi, Tag } from "@/lib/api/tags";
+import { userApi, User } from "@/lib/api/users";
 import { Plus, Tag as TagIcon } from "lucide-react";
 
 interface EditTaskModalProps {
@@ -18,6 +19,7 @@ const PREDEFINED_TAGS = [
 
 export function EditTaskModal({ isOpen, onClose, onSuccess, task }: EditTaskModalProps) {
   const [projects, setProjects] = useState<Project[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
   const [formData, setFormData] = useState({
     title: "",
     description: "",
@@ -25,6 +27,7 @@ export function EditTaskModal({ isOpen, onClose, onSuccess, task }: EditTaskModa
     projectId: "",
     status: "todo",
     deadline: "",
+    assigneeId: "",
     tags: [] as string[],
   });
   const [availableTags, setAvailableTags] = useState<Tag[]>([]);
@@ -41,9 +44,11 @@ export function EditTaskModal({ isOpen, onClose, onSuccess, task }: EditTaskModa
         projectId: task.project_id || "",
         status: task.status?.toLowerCase() || "todo",
         deadline: task.deadline ? new Date(task.deadline).toISOString().split('T')[0] : "",
+        assigneeId: task.assignee_id ? task.assignee_id.toLowerCase() : "",
         tags: task.tags?.map(t => t.name) || [],
       });
       fetchProjects();
+      fetchUsers();
       fetchTags();
     }
   }, [isOpen, task]);
@@ -63,6 +68,15 @@ export function EditTaskModal({ isOpen, onClose, onSuccess, task }: EditTaskModa
       setProjects(data);
     } catch (err) {
       console.error("Failed to fetch projects", err);
+    }
+  };
+
+  const fetchUsers = async () => {
+    try {
+      const data = await userApi.getAll();
+      setUsers(data);
+    } catch (err) {
+      console.error("Failed to fetch users", err);
     }
   };
 
@@ -90,6 +104,7 @@ export function EditTaskModal({ isOpen, onClose, onSuccess, task }: EditTaskModa
       submitData.append("ProjectId", formData.projectId);
       submitData.append("Status", formData.status);
       if (formData.deadline) submitData.append("Deadline", new Date(formData.deadline).toISOString());
+      if (formData.assigneeId) submitData.append("AssigneeId", formData.assigneeId);
       
       formData.tags.forEach(t => submitData.append("TagNames", t));
 
@@ -221,18 +236,37 @@ export function EditTaskModal({ isOpen, onClose, onSuccess, task }: EditTaskModa
               </div>
             </div>
 
-            <div className="space-y-2">
-              <label htmlFor="edit-task-deadline" className="text-sm font-bold ml-1 text-[var(--text-secondary)]">
-                Deadline
-              </label>
-              <input
-                id="edit-task-deadline"
-                title="Select deadline"
-                type="date"
-                value={formData.deadline}
-                onChange={(e) => setFormData({ ...formData, deadline: e.target.value })}
-                className="input-field w-full"
-              />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label htmlFor="edit-task-deadline" className="text-sm font-bold ml-1 text-[var(--text-secondary)]">
+                  Deadline
+                </label>
+                <input
+                  id="edit-task-deadline"
+                  title="Select deadline"
+                  type="date"
+                  value={formData.deadline}
+                  onChange={(e) => setFormData({ ...formData, deadline: e.target.value })}
+                  className="input-field w-full"
+                />
+              </div>
+              <div className="space-y-2">
+                <label htmlFor="edit-task-assignee" className="text-sm font-bold ml-1 text-[var(--text-secondary)]">
+                  Assign To
+                </label>
+                <select
+                  id="edit-task-assignee"
+                  title="Assign to user"
+                  value={formData.assigneeId.toLowerCase()}
+                  onChange={(e) => setFormData({ ...formData, assigneeId: e.target.value })}
+                  className="input-field w-full"
+                >
+                  <option value="">Unassigned</option>
+                  {users.map(u => (
+                    <option key={u.id} value={u.id.toLowerCase()}>{u.name}</option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             <div className="space-y-3">

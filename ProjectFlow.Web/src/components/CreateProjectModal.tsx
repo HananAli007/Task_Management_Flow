@@ -36,16 +36,7 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
       if (!payload.deadline) {
         delete payload.deadline;
       } else {
-        const selectedDate = new Date(payload.deadline);
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        
-        if (selectedDate < today) {
-          setError("Deadline cannot be in the past");
-          setIsSubmitting(false);
-          return;
-        }
-        payload.deadline = selectedDate.toISOString();
+        payload.deadline = new Date(payload.deadline).toISOString();
       }
 
       await projectApi.create(payload);
@@ -165,7 +156,6 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
                 value={formData.deadline}
                 onChange={(e) => setFormData({ ...formData, deadline: e.target.value })}
                 className="input-field w-full"
-                min={new Date().toISOString().split('T')[0]}
               />
             </div>
           </form>

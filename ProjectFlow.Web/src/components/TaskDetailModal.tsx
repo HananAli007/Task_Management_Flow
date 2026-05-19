@@ -148,7 +148,7 @@ export function TaskDetailModal({ taskId, isOpen, onClose, onUpdate, onEdit }: T
   const handleStartEditSubtask = (sub: Subtask) => {
     setEditingSubtaskId(sub.id);
     setEditingSubtaskTitle(sub.title);
-    setEditingSubtaskAssignee(sub.assignee_id || "");
+    setEditingSubtaskAssignee(sub.assignee_id ? sub.assignee_id.toLowerCase() : "");
   };
 
   const handleSaveSubtaskEdit = async (e: React.FormEvent, subtaskId: string, isCompleted: boolean) => {
@@ -162,8 +162,6 @@ export function TaskDetailModal({ taskId, isOpen, onClose, onUpdate, onEdit }: T
       formData.append("IsCompleted", isCompleted.toString());
       if (editingSubtaskAssignee) {
         formData.append("AssigneeId", editingSubtaskAssignee);
-      } else {
-        formData.append("AssigneeId", "");
       }
       
       await subtaskApi.update(subtaskId, formData);
@@ -423,13 +421,13 @@ export function TaskDetailModal({ taskId, isOpen, onClose, onUpdate, onEdit }: T
                                 />
                                 <div className="flex items-center justify-between gap-2">
                                   <select
-                                    value={editingSubtaskAssignee}
+                                    value={editingSubtaskAssignee.toLowerCase()}
                                     onChange={(e) => setEditingSubtaskAssignee(e.target.value)}
                                     className="text-xs bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-gray-300 border-none outline-none rounded-lg py-1.5 px-2.5 font-semibold"
                                   >
                                     <option value="">Unassigned</option>
                                     {users.map(u => (
-                                      <option key={u.id} value={u.id}>{u.name}</option>
+                                      <option key={u.id} value={u.id.toLowerCase()}>{u.name}</option>
                                     ))}
                                   </select>
                                   <div className="flex items-center gap-1.5">
@@ -538,7 +536,7 @@ export function TaskDetailModal({ taskId, isOpen, onClose, onUpdate, onEdit }: T
                           {/* Left: Assign + Attachment */}
                           <div className="flex items-center gap-1">
                             <select 
-                              value={newSubtaskAssignee}
+                              value={newSubtaskAssignee.toLowerCase()}
                               onChange={(e) => setNewSubtaskAssignee(e.target.value)}
                               title="Assign subtask to user"
                               aria-label="Assign subtask to user"
@@ -546,7 +544,7 @@ export function TaskDetailModal({ taskId, isOpen, onClose, onUpdate, onEdit }: T
                             >
                               <option value="">Assign To</option>
                               {users.map(u => (
-                                <option key={u.id} value={u.id}>{u.name}</option>
+                                <option key={u.id} value={u.id.toLowerCase()}>{u.name}</option>
                               ))}
                             </select>
                             <label 
