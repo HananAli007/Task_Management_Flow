@@ -11,6 +11,7 @@ import { subtaskApi, Subtask } from "@/lib/api/subtasks";
 import { commentApi, Comment } from "@/lib/api/comments";
 import { userApi, User as UserType } from "@/lib/api/users";
 import { format } from "date-fns";
+import { useAuthStore } from "@/store/useAuthStore";
 
 interface TaskDetailModalProps {
   taskId: string | null;
@@ -21,6 +22,7 @@ interface TaskDetailModalProps {
 }
 
 export function TaskDetailModal({ taskId, isOpen, onClose, onUpdate, onEdit }: TaskDetailModalProps) {
+  const { user } = useAuthStore();
   const [task, setTask] = useState<Task | null>(null);
   const [subtasks, setSubtasks] = useState<Subtask[]>([]);
   const [comments, setComments] = useState<Comment[]>([]);
@@ -38,6 +40,11 @@ export function TaskDetailModal({ taskId, isOpen, onClose, onUpdate, onEdit }: T
   const [isPostingComment, setIsPostingComment] = useState(false);
   
   const [subtaskAttachments, setSubtaskAttachments] = useState<File[]>([]);
+  
+  const [editingSubtaskId, setEditingSubtaskId] = useState<string | null>(null);
+  const [editingSubtaskTitle, setEditingSubtaskTitle] = useState("");
+  const [editingSubtaskAssignee, setEditingSubtaskAssignee] = useState("");
+  const [isUpdatingSubtask, setIsUpdatingSubtask] = useState(false);
 
   useEffect(() => {
     if (isOpen && taskId) {
@@ -138,6 +145,61 @@ export function TaskDetailModal({ taskId, isOpen, onClose, onUpdate, onEdit }: T
     }
   };
 
+  const handleStartEditSubtask = (sub: Subtask) => {
+    setEditingSubtaskId(sub.id);
+    setEditingSubtaskTitle(sub.title);
+    setEditingSubtaskAssignee(sub.assignee_id || "");
+  };
+
+  const handleSaveSubtaskEdit = async (e: React.FormEvent, subtaskId: string, isCompleted: boolean) => {
+    e.preventDefault();
+    if (!editingSubtaskTitle.trim() || !taskId) return;
+    
+    setIsUpdatingSubtask(true);
+    try {
+      const formData = new FormData();
+      formData.append("Title", editingSubtaskTitle);
+      formData.append("IsCompleted", isCompleted.toString());
+      if (editingSubtaskAssignee) {
+        formData.append("AssigneeId", editingSubtaskAssignee);
+      } else {
+        formData.append("AssigneeId", "");
+      }
+      
+      await subtaskApi.update(subtaskId, formData);
+      setEditingSubtaskId(null);
+      const [updatedSubtasks, updatedHistory] = await Promise.all([
+        subtaskApi.getByTask(taskId),
+        taskApi.getHistory(taskId)
+      ]);
+      setSubtasks(updatedSubtasks);
+      setHistory(updatedHistory);
+      onUpdate?.();
+    } catch (error) {
+      console.error("Failed to update subtask", error);
+    } finally {
+      setIsUpdatingSubtask(false);
+    }
+  };
+
+  const handleDeleteSubtask = async (subtaskId: string) => {
+    if (!taskId) return;
+    if (!window.confirm("Are you sure you want to delete this subtask?")) return;
+    
+    try {
+      await subtaskApi.delete(subtaskId);
+      const [updatedSubtasks, updatedHistory] = await Promise.all([
+        subtaskApi.getByTask(taskId),
+        taskApi.getHistory(taskId)
+      ]);
+      setSubtasks(updatedSubtasks);
+      setHistory(updatedHistory);
+      onUpdate?.();
+    } catch (error) {
+      console.error("Failed to delete subtask", error);
+    }
+  };
+
   const handlePostComment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newComment.trim() || !taskId) return;
@@ -173,19 +235,6 @@ export function TaskDetailModal({ taskId, isOpen, onClose, onUpdate, onEdit }: T
       />
       <div className="bg-white dark:bg-[#1a1a2e] w-full max-w-4xl h-[85vh] flex flex-col relative overflow-hidden rounded-2xl shadow-[0_25px_60px_rgba(0,0,0,0.3)] border border-gray-200 dark:border-white/10 animate-in zoom-in-95 duration-300">
         <div className="absolute top-4 right-4 flex items-center gap-2 z-20">
-          {task && onEdit && (
-            <button 
-              onClick={() => {
-                onEdit(task);
-                onClose();
-              }}
-              title="Edit task"
-              aria-label="Edit task"
-              className="p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-white/10 transition-colors text-gray-400 hover:text-blue-500"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-pencil"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
-            </button>
-          )}
           <button 
             onClick={onClose}
             title="Close modal"
@@ -206,34 +255,49 @@ export function TaskDetailModal({ taskId, isOpen, onClose, onUpdate, onEdit }: T
             <div className="flex-[1.5] overflow-y-auto p-8 custom-scrollbar">
               <div className="space-y-6">
                 {/* Header */}
-                <div>
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="text-[10px] uppercase font-bold px-2.5 py-1 rounded-md bg-blue-500/10 text-blue-600 dark:text-blue-400">
-                      {task.project_name}
-                    </span>
-                    <span className={`text-[10px] uppercase font-bold px-2.5 py-1 rounded-md ${
-                      task.priority === 'urgent' || task.priority === 'high' 
-                        ? 'bg-red-500/10 text-red-600 dark:text-red-400' 
-                        : 'bg-green-500/10 text-green-600 dark:text-green-400'
-                    }`}>
-                      {task.priority} Priority
-                    </span>
-                  </div>
-                  <h1 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-white">
-                    {task.title}
-                  </h1>
-
-                  {/* Tags */}
-                  {task.tags && task.tags.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5 mt-3">
-                      {task.tags.map(tag => (
-                        <span key={tag.id} className="px-2 py-0.5 rounded-lg bg-blue-500/10 text-blue-500 text-[10px] font-bold border border-blue-500/10">
-                          {tag.name}
-                        </span>
-                      ))}
+                <div className="flex justify-between items-start gap-4">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="text-[10px] uppercase font-bold px-2.5 py-1 rounded-md bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                        {task.project_name}
+                      </span>
+                      <span className={`text-[10px] uppercase font-bold px-2.5 py-1 rounded-md ${
+                        task.priority === 'urgent' || task.priority === 'high' 
+                          ? 'bg-red-500/10 text-red-600 dark:text-red-400' 
+                          : 'bg-green-500/10 text-green-600 dark:text-green-400'
+                      }`}>
+                        {task.priority} Priority
+                      </span>
                     </div>
+                    <h1 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-white">
+                      {task.title}
+                    </h1>
+                  </div>
+
+                  {task && onEdit && (
+                    <button 
+                      onClick={() => {
+                        onEdit(task);
+                        onClose();
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-500/10 hover:shadow-blue-500/20 hover:scale-105 active:scale-95 transition-all flex-shrink-0"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-pencil"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                      Edit Task
+                    </button>
                   )}
                 </div>
+
+                {/* Tags */}
+                {task.tags && task.tags.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {task.tags.map(tag => (
+                      <span key={tag.id} className="px-2 py-0.5 rounded-lg bg-blue-500/10 text-blue-500 text-[10px] font-bold border border-blue-500/10">
+                        {tag.name}
+                      </span>
+                    ))}
+                  </div>
+                )}
 
                 {/* Info Row */}
                 <div className="flex flex-wrap gap-8 py-5 border-y border-gray-100 dark:border-white/10">
@@ -303,40 +367,117 @@ export function TaskDetailModal({ taskId, isOpen, onClose, onUpdate, onEdit }: T
                   </h3>
                   
                   <div className="space-y-3">
-                    {subtasks.map(sub => (
-                      <div 
-                        key={sub.id} 
-                        className="flex items-start gap-3 p-3 rounded-xl bg-gray-50 dark:bg-white/5 hover:bg-gray-100 dark:hover:bg-white/10 transition-all"
-                      >
-                        <button 
-                          onClick={() => handleToggleSubtask(sub)}
-                          title={sub.is_completed ? "Mark as incomplete" : "Mark as completed"}
-                          aria-label={sub.is_completed ? "Mark as incomplete" : "Mark as completed"}
-                          className={`mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all flex-shrink-0 ${
-                            sub.is_completed ? "bg-blue-600 border-blue-600" : "border-gray-300 dark:border-gray-600 hover:border-blue-500"
-                          }`}
+                    {subtasks.map(sub => {
+                      const isCreator = user && sub.creator_id && sub.creator_id.toLowerCase() === user.id.toLowerCase();
+                      return (
+                        <div 
+                          key={sub.id} 
+                          className="flex items-start gap-3 p-3 rounded-xl bg-gray-50 dark:bg-white/5 hover:bg-gray-100 dark:hover:bg-white/10 transition-all"
                         >
-                          {sub.is_completed && <CheckCircle2 size={12} className="text-white" />}
-                        </button>
-                        <div className="flex-1 space-y-1">
-                          <p className={`text-sm font-medium ${sub.is_completed ? "line-through text-gray-400" : "text-gray-800 dark:text-gray-200"}`}>
-                            {sub.title}
-                          </p>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            {sub.assignee_name && (
-                              <span className="text-[10px] text-gray-400 flex items-center gap-1">
-                                <User size={10} /> {sub.assignee_name}
-                              </span>
+                          <button 
+                            onClick={() => handleToggleSubtask(sub)}
+                            title={sub.is_completed ? "Mark as incomplete" : "Mark as completed"}
+                            aria-label={sub.is_completed ? "Mark as incomplete" : "Mark as completed"}
+                            className={`mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all flex-shrink-0 ${
+                              sub.is_completed ? "bg-blue-600 border-blue-600" : "border-gray-300 dark:border-gray-600 hover:border-blue-500"
+                            }`}
+                          >
+                            {sub.is_completed && <CheckCircle2 size={12} className="text-white" />}
+                          </button>
+                          
+                          <div className="flex-1 space-y-1">
+                            {editingSubtaskId === sub.id ? (
+                              <form onSubmit={(e) => handleSaveSubtaskEdit(e, sub.id, sub.is_completed)} className="space-y-2">
+                                <input 
+                                  type="text"
+                                  value={editingSubtaskTitle}
+                                  onChange={(e) => setEditingSubtaskTitle(e.target.value)}
+                                  className="w-full bg-white dark:bg-white/5 border border-blue-500/30 rounded-xl px-3 py-1.5 text-sm text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                  autoFocus
+                                  required
+                                />
+                                <div className="flex items-center justify-between gap-2">
+                                  <select
+                                    value={editingSubtaskAssignee}
+                                    onChange={(e) => setEditingSubtaskAssignee(e.target.value)}
+                                    className="text-xs bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-gray-300 border-none outline-none rounded-lg py-1.5 px-2.5 font-semibold"
+                                  >
+                                    <option value="">Unassigned</option>
+                                    {users.map(u => (
+                                      <option key={u.id} value={u.id}>{u.name}</option>
+                                    ))}
+                                  </select>
+                                  <div className="flex items-center gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => setEditingSubtaskId(null)}
+                                      className="px-2.5 py-1 text-[11px] font-semibold text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5 rounded-lg transition-all"
+                                    >
+                                      Cancel
+                                    </button>
+                                    <button
+                                      type="submit"
+                                      disabled={isUpdatingSubtask || !editingSubtaskTitle.trim()}
+                                      className="px-3 py-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-[11px] font-bold rounded-lg shadow-md shadow-blue-500/10 transition-all flex items-center gap-1"
+                                    >
+                                      {isUpdatingSubtask ? <Loader2 size={10} className="animate-spin" /> : 'Save'}
+                                    </button>
+                                  </div>
+                                </div>
+                              </form>
+                            ) : (
+                              <div className="flex items-start justify-between gap-2 group/sub">
+                                <div className="flex-1">
+                                  <p 
+                                    onClick={() => isCreator && handleStartEditSubtask(sub)}
+                                    className={`text-sm font-medium ${sub.is_completed ? "line-through text-gray-400" : "text-gray-800 dark:text-gray-200"} ${isCreator ? "cursor-pointer hover:text-blue-500 transition-colors" : ""}`}
+                                    title={isCreator ? "Click to edit subtask" : undefined}
+                                  >
+                                    {sub.title}
+                                  </p>
+                                  <div className="flex items-center gap-2 flex-wrap mt-1">
+                                    {sub.assignee_name && (
+                                      <span className="text-[10px] text-gray-400 flex items-center gap-1">
+                                        <User size={10} /> {sub.assignee_name}
+                                      </span>
+                                    )}
+                                    {sub.creator_name && (
+                                      <span className="text-[10px] text-gray-400/80 flex items-center gap-1">
+                                        <span className="font-bold text-[9px] uppercase opacity-75">By:</span> {sub.creator_name}
+                                      </span>
+                                    )}
+                                    {sub.attachments && sub.attachments.length > 0 && sub.attachments.map(att => (
+                                      <a key={att.id} href={att.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md bg-gray-200 dark:bg-white/10 text-gray-600 dark:text-gray-300 hover:text-blue-500 transition-all">
+                                        <Paperclip size={9} /> {att.name}
+                                      </a>
+                                    ))}
+                                  </div>
+                                </div>
+
+                                {isCreator && (
+                                  <div className="flex items-center gap-1 opacity-0 group-hover/sub:opacity-100 transition-opacity">
+                                    <button
+                                      onClick={() => handleStartEditSubtask(sub)}
+                                      title="Edit subtask"
+                                      className="p-1 text-gray-400 hover:text-blue-500 hover:bg-gray-100 dark:hover:bg-white/5 rounded-lg transition-all"
+                                    >
+                                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-pencil"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeleteSubtask(sub.id)}
+                                      title="Delete subtask"
+                                      className="p-1 text-gray-400 hover:text-red-500 hover:bg-gray-100 dark:hover:bg-white/5 rounded-lg transition-all"
+                                    >
+                                      <Trash2 size={12} />
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
                             )}
-                            {sub.attachments && sub.attachments.length > 0 && sub.attachments.map(att => (
-                              <a key={att.id} href={att.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md bg-gray-200 dark:bg-white/10 text-gray-600 dark:text-gray-300 hover:text-blue-500 transition-all">
-                                <Paperclip size={9} /> {att.name}
-                              </a>
-                            ))}
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
 
                     {/* Add subtask - same style as comment box */}
                     <form onSubmit={handleAddSubtask} className="mt-4">
