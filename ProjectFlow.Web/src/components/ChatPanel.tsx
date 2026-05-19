@@ -785,7 +785,10 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ user, onClose }) => {
       
       {/* Voice Dialer overlay UI */}
       {callState !== 'idle' && (
-        <div className="absolute inset-0 bg-[#0c0d1b]/98 backdrop-blur-xl z-[1002] flex flex-col justify-between p-8 text-white animate-in fade-in slide-in-from-bottom-12 duration-300">
+        <div 
+          className="absolute inset-0 z-[1002] flex flex-col justify-between p-8 text-white animate-in fade-in slide-in-from-bottom-12 duration-300"
+          style={{ backgroundColor: '#0c0d1b' }}
+        >
           <div className="text-center space-y-4 pt-12">
             {/* Pulsing Avatar Container */}
             <div className="relative mx-auto w-24 h-24 flex items-center justify-center">
@@ -833,24 +836,26 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ user, onClose }) => {
           <div className="flex flex-col gap-6 items-center pb-8">
             <div className="flex items-center gap-6 justify-center">
               <button 
+                type="button"
                 onClick={() => setIsMuted(!isMuted)}
                 title="Mute call"
-                className={`p-3.5 rounded-full transition-all border ${
+                className={`p-4 rounded-full transition-all border ${
                   isMuted 
-                    ? 'bg-red-500/20 border-red-500/30 text-red-500' 
-                    : 'bg-white/5 border-white/10 hover:bg-white/10 text-white'
+                    ? 'bg-red-500/25 border-red-500/40 text-red-500 hover:bg-red-500/35' 
+                    : 'bg-white/10 border-white/20 hover:bg-white/20 text-white hover:scale-105 active:scale-95'
                 }`}
               >
                 {isMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
               </button>
               
               <button 
+                type="button"
                 onClick={toggleHold}
                 disabled={callState === 'dialing' || callState === 'ringing' || callState === 'ended'}
-                className={`px-6 py-3.5 rounded-2xl text-xs font-bold uppercase tracking-wider transition-all border ${
+                className={`px-8 py-3.5 rounded-2xl text-xs font-bold uppercase tracking-wider transition-all border ${
                   callState === 'onhold'
-                    ? 'bg-blue-500 border-blue-500 text-white'
-                    : 'bg-white/5 border-white/10 hover:bg-white/10 text-white disabled:opacity-30'
+                    ? 'bg-blue-600 border-blue-500 text-white hover:bg-blue-500 hover:scale-105 active:scale-95'
+                    : 'bg-white/10 border-white/20 hover:bg-white/20 text-white disabled:opacity-30 disabled:cursor-not-allowed hover:scale-105 active:scale-95'
                 }`}
               >
                 Hold
@@ -858,6 +863,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ user, onClose }) => {
             </div>
 
             <button 
+              type="button"
               onClick={() => hangUpCall()}
               title="Hang up"
               className="p-4 bg-red-600 hover:bg-red-500 rounded-full transition-all text-white shadow-xl shadow-red-600/30 hover:scale-105 active:scale-95"
