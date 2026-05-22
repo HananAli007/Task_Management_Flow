@@ -11,6 +11,19 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  experimental: {
+    workerThreads: false,
+    cpus: 1
+  },
+  webpack: (config, { dev }) => {
+    if (!dev) {
+      config.cache = false;
+      if (config.optimization) {
+        config.optimization.minimize = false;
+      }
+    }
+    return config;
+  },
   async rewrites() {
     // Determine backend URL from environment
     // Defaults to localhost:5000 if not specified
@@ -28,6 +41,11 @@ const nextConfig = {
         // SignalR hubs
         source: '/hubs/:path*',
         destination: `${backendUrl}/hubs/:path*`,
+      },
+      {
+        // Uploads folder served by backend
+        source: '/uploads/:path*',
+        destination: `${backendUrl}/uploads/:path*`,
       },
     ];
   },

@@ -6,10 +6,12 @@ import * as signalR from '@microsoft/signalr';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useChatStore } from '@/store/useChatStore';
 import { Phone, PhoneOff, Maximize2, Minimize2, X } from 'lucide-react';
+import { getBaseURL } from '@/lib/api';
 
 interface SignalRContextType {
   isConnected: boolean;
   sendMessage: (receiverId: string, content: string, attachmentUrl?: string | null, messageType?: string) => Promise<void>;
+  sendTypingStatus: (receiverId: string, isTyping: boolean, isRecording: boolean) => Promise<void>;
   connection: signalR.HubConnection | null;
   onlineUsers: Set<string>;
   unreadCounts: Record<string, number>;
@@ -137,7 +139,8 @@ export const SignalRProvider: React.FC<{ children: React.ReactNode }> = ({ child
       return;
     }
 
-    const hubUrl = HUB_URL;
+    const directBase = getBaseURL();
+    const hubUrl = directBase ? `${directBase}${HUB_URL}` : HUB_URL;
 
     const connection = new signalR.HubConnectionBuilder()
       .withUrl(hubUrl, {
@@ -247,6 +250,13 @@ export const SignalRProvider: React.FC<{ children: React.ReactNode }> = ({ child
       });
     });
 
+    connection.on('UserTypingStatus', (senderId: string, isTyping: boolean, isRecording: boolean) => {
+      const lowerSenderId = senderId.toLowerCase();
+      window.dispatchEvent(new CustomEvent('user-typing-status', { 
+        detail: { senderId: lowerSenderId, isTyping, isRecording } 
+      }));
+    });
+
     connection.on('IncomingCall', (callerId: string, sdpOffer: string, callerName: string) => {
       useChatStore.getState().setIncomingCall({ callerId, callerName, sdpOffer });
     });
@@ -285,6 +295,19 @@ export const SignalRProvider: React.FC<{ children: React.ReactNode }> = ({ child
         await connectionRef.current.invoke('SendMessage', receiverId, content, attachmentUrl, messageType);
       } catch (err) {
         console.error('SignalR SendMessage Error: ', err);
+        throw err;
+      }
+    } else {
+      throw new Error('SignalR is not connected');
+    }
+  }, []);
+
+  const sendTypingStatus = useCallback(async (receiverId: string, isTyping: boolean, isRecording: boolean) => {
+    if (connectionRef.current && connectionRef.current.state === signalR.HubConnectionState.Connected) {
+      try {
+        await connectionRef.current.invoke('SendTypingStatus', receiverId, isTyping, isRecording);
+      } catch (err) {
+        console.error('SignalR SendTypingStatus Error: ', err);
       }
     }
   }, []);
@@ -419,6 +442,7 @@ export const SignalRProvider: React.FC<{ children: React.ReactNode }> = ({ child
     <SignalRContext.Provider value={{ 
       isConnected, 
       sendMessage, 
+      sendTypingStatus,
       connection: connectionRef.current,
       onlineUsers,
       unreadCounts,

@@ -1,7 +1,11 @@
 import axios from 'axios';
 
-// All API calls go through Next.js rewrites proxy (/backend-api/* → backend /api/*)
-// This eliminates CORS and Mixed Content issues completely.
+export const getBaseURL = () => {
+  // Always return relative URL to route through Next.js rewrite proxy.
+  // This avoids CORS, SSL handshake mismatches (HTTP/HTTPS mix), and port 8080 exposure issues.
+  return '';
+};
+
 const api = axios.create({
   baseURL: '',
   headers: {
@@ -9,22 +13,34 @@ const api = axios.create({
   },
 });
 
-// Request interceptor to add JWT token and handle proxying
+// Request interceptor to add JWT token and handle routing
 api.interceptors.request.use((config) => {
   // Log the original request for debugging
   if (process.env.NODE_ENV === 'development') {
     console.log(`[API] Request to: ${config.url}`);
   }
 
-  // Rewrite /api/* paths to /backend-api/* so Next.js proxy handles them
-  // This handles both relative (/api/...) and absolute (http://.../api/...) URLs
+  const directBase = getBaseURL();
+
   if (config.url) {
-    if (config.url.startsWith('/api/')) {
-      config.url = config.url.replace(/^\/api\//, '/backend-api/');
-    } else if (config.url.includes('/api/') && !config.url.includes('/backend-api/')) {
-      // Handle cases where a full URL might have been passed
-      const parts = config.url.split('/api/');
-      config.url = `/backend-api/${parts[1]}`;
+    if (directBase) {
+      // Route directly to backend on port 8080
+      if (config.url.startsWith('/api/')) {
+        config.url = `${directBase}${config.url}`;
+      } else if (config.url.startsWith('/backend-api/')) {
+        config.url = config.url.replace(/^\/backend-api\//, `${directBase}/api/`);
+      } else if (config.url.includes('/api/')) {
+        const parts = config.url.split('/api/');
+        config.url = `${directBase}/api/${parts[1]}`;
+      }
+    } else {
+      // Local development rewrite proxy
+      if (config.url.startsWith('/api/')) {
+        config.url = config.url.replace(/^\/api\//, '/backend-api/');
+      } else if (config.url.includes('/api/') && !config.url.includes('/backend-api/')) {
+        const parts = config.url.split('/api/');
+        config.url = `/backend-api/${parts[1]}`;
+      }
     }
   }
 

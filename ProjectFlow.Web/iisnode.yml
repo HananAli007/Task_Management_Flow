@@ -1,0 +1,56 @@
+# ================================================================
+#  ProjectFlow – IISNode Configuration
+#  File: iisnode.yml (placed alongside web.config in site root)
+#  
+#  FIXES vs previous version:
+#  [1] devErrorsEnabled → false  (was true; leaked stack traces to browser)
+#  [2] debuggingEnabled → false  (production hardening)
+#  [3] maxConcurrentRequestsPerProcess set (prevent memory pile-up)
+#  [4] recycleSignal added (clean recycle without SIGKILL)
+#  [5] nodeProcessCountPerApplication: 1 (standalone mode requirement)
+# ================================================================
+
+# Node.js environment
+node_env: production
+
+# ── Logging ───────────────────────────────────────────────────
+loggingEnabled: true
+logDirectory: iisnode-logs
+logFileFlushInterval: 5000
+
+# ── Error Display ─────────────────────────────────────────────
+# NEVER set devErrorsEnabled: true in production.
+# It sends raw Node.js stack traces (including file paths, env vars)
+# directly to the browser response body – a serious security risk.
+devErrorsEnabled: false
+
+# ── Debugging ─────────────────────────────────────────────────
+# Keep disabled in production. Debugging opens a V8 Inspector
+# socket that any process on the server can attach to.
+debuggingEnabled: false
+
+# ── Process Management ────────────────────────────────────────
+# Next.js standalone mode MUST run as a single process.
+# Multiple processes would each try to bind the same Named Pipe
+# and all but the first would crash with EADDRINUSE.
+nodeProcessCountPerApplication: 1
+
+# Maximum concurrent requests queued per Node.js process.
+# Requests beyond this limit receive HTTP 503 immediately.
+# Tune based on your server's RAM and CPU capacity.
+maxConcurrentRequestsPerProcess: 1024
+
+# ── Startup & Timeout ─────────────────────────────────────────
+# Time (ms) IISNode waits for Node.js to start and accept connections.
+# Next.js standalone startup can take 3–8 seconds on first request.
+startupRetryCount: 3
+
+# ── File Watching ─────────────────────────────────────────────
+# IISNode will recycle the Node.js process when these files change.
+# server.js: restart on server script update
+# web.config: restart on IIS config change (IIS already does this)
+watchedFiles: web.config;server.js
+
+# ── Graceful Recycle ──────────────────────────────────────────
+# Send SIGTERM before SIGKILL to allow Next.js to finish in-flight requests
+recycleSignal: SIGTERM

@@ -19,6 +19,17 @@ interface ChatPanelProps {
   onClose: () => void;
 }
 
+// Helper to normalize absolute upload URLs to relative paths.
+// This resolves CORS, HTTPS -> HTTP Mixed Content blocks and port 8080 exposure issues.
+const cleanAttachmentUrl = (url: string | undefined): string => {
+  if (!url) return '';
+  if (url.includes('/uploads/')) {
+    const parts = url.split('/uploads/');
+    return `/uploads/${parts[1]}`;
+  }
+  return url;
+};
+
 // Trig-based dynamic visual static waveform subcomponent
 const VoicePlayer: React.FC<{ url: string; isMe: boolean }> = ({ url, isMe }) => {
   const [isPlaying, setIsPlaying] = useState(false);
@@ -122,6 +133,36 @@ const VoicePlayer: React.FC<{ url: string; isMe: boolean }> = ({ url, isMe }) =>
   );
 };
 
+const MessageContent: React.FC<{ content: string; isMe: boolean }> = ({ content, isMe }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const isLong = content.length > 250;
+  
+  const displayedContent = isLong && !isExpanded 
+    ? `${content.substring(0, 250)}...` 
+    : content;
+    
+  return (
+    <div className="px-4 py-2.5 select-text">
+      <p className="text-[13px] leading-relaxed break-words whitespace-pre-wrap selection:bg-blue-500/30 dark:selection:bg-blue-500/40">
+        {displayedContent}
+      </p>
+      {isLong && (
+        <button
+          type="button"
+          onClick={() => setIsExpanded(!isExpanded)}
+          className={`text-[11px] font-black mt-1.5 transition-colors uppercase tracking-wider block ${
+            isMe 
+              ? 'text-white/80 hover:text-white hover:underline' 
+              : 'text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:underline'
+          }`}
+        >
+          {isExpanded ? 'Show Less' : 'Read More'}
+        </button>
+      )}
+    </div>
+  );
+};
+
 const createVirtualAudioStream = (): MediaStream => {
   try {
     const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
@@ -145,7 +186,8 @@ const createVirtualAudioStream = (): MediaStream => {
 
 export const ChatPanel: React.FC<ChatPanelProps> = ({ user, onClose }) => {
   const [messages, setMessages] = useState<any[]>([]);
-  const [inputValue, setInputValue] = useState('');
+  const { getDraft: getDraftFn, setDraft: setDraftFn, clearDraft: clearDraftFn } = useChatStore();
+  const [inputValue, setInputValue] = useState(() => getDraftFn(user.id));
   const [isLoading, setIsLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
   const [isFullScreen, setIsFullScreen] = useState(false);
@@ -155,18 +197,29 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ user, onClose }) => {
   const emojiRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   
-  const { onlineUsers, markAsRead, connection } = useSignalRContext();
+  const { onlineUsers, markAsRead, connection, sendTypingStatus } = useSignalRContext();
   const { theme } = useThemeStore();
   const isDarkMode = theme === 'dark';
   const isOnline = onlineUsers.has(user.id.toLowerCase());
-  const { addCallLog, callHistory } = useChatStore();
+  const { addCallLog, callHistory, getDraft, setDraft, clearDraft } = useChatStore();
 
   // Voice Note Recording States
   const [isRecording, setIsRecording] = useState(false);
+  const [isRecordingPaused, setIsRecordingPaused] = useState(false);
   const [recordDuration, setRecordDuration] = useState(0);
   const recordIntervalRef = useRef<any>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+
+  // Typing Status States
+  const [partnerTypingState, setPartnerTypingState] = useState<{ isTyping: boolean; isRecording: boolean }>({ isTyping: false, isRecording: false });
+  const [amTyping, setAmTyping] = useState(false);
+  const amTypingTimeoutRef = useRef<any>(null);
+
+  // Audio Preview States
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [isPreviewPlaying, setIsPreviewPlaying] = useState(false);
+  const previewAudioRef = useRef<HTMLAudioElement | null>(null);
 
   // Voice Call States
   const [callState, setCallState] = useState<'idle' | 'dialing' | 'ringing' | 'connected' | 'onhold' | 'ended'>('idle');
@@ -267,13 +320,25 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ user, onClose }) => {
       peerConnectionRef.current.close();
     }
 
-    const pc = new RTCPeerConnection({
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' }
-      ]
-    });
+    const iceServers: RTCIceServer[] = [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' }
+    ];
+
+    const turnUrl = process.env.NEXT_PUBLIC_TURN_URL;
+    const turnUsername = process.env.NEXT_PUBLIC_TURN_USERNAME;
+    const turnCredential = process.env.NEXT_PUBLIC_TURN_CREDENTIAL;
+
+    if (turnUrl) {
+      iceServers.push({
+        urls: turnUrl,
+        username: turnUsername,
+        credential: turnCredential
+      });
+    }
+
+    const pc = new RTCPeerConnection({ iceServers });
 
     pc.onicecandidate = (event) => {
       if (event.candidate && connection) {
@@ -602,9 +667,17 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ user, onClose }) => {
       }
     };
 
+    const handleUserTypingStatus = (e: any) => {
+      const { senderId, isTyping, isRecording } = e.detail;
+      if (senderId === targetId) {
+        setPartnerTypingState({ isTyping, isRecording });
+      }
+    };
+
     window.addEventListener('webrtc-accept-call', handleWebRtcAccept);
     window.addEventListener('webrtc-call-ended', handleWebRtcEnded);
     window.addEventListener('webrtc-call-rejected', handleWebRtcRejected);
+    window.addEventListener('user-typing-status', handleUserTypingStatus);
 
     // Direct SignalR Hub Listeners inside active ChatPanel
     if (connection) {
@@ -645,6 +718,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ user, onClose }) => {
       window.removeEventListener('webrtc-accept-call', handleWebRtcAccept);
       window.removeEventListener('webrtc-call-ended', handleWebRtcEnded);
       window.removeEventListener('webrtc-call-rejected', handleWebRtcRejected);
+      window.removeEventListener('user-typing-status', handleUserTypingStatus);
       
       stopRingingSynth();
       clearInterval(callTimerRef.current);
@@ -674,18 +748,59 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ user, onClose }) => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  // Synchronize draft value to store on every change of inputValue
+  useEffect(() => {
+    setDraftFn(user.id, inputValue);
+  }, [inputValue, user.id, setDraftFn]);
+
   const handleSend = async (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!inputValue.trim() || !isConnected) return;
     
     const content = inputValue.trim();
     setInputValue('');
+    clearDraftFn(user.id);
     setShowEmojiPicker(false);
-    await sendMessage(user.id, content);
+
+    try {
+      await sendMessage(user.id, content);
+    } catch (err) {
+      console.error('Failed to send message:', err);
+      setInputValue(content);
+      setDraftFn(user.id, content);
+      toast.error('Failed to send message. Please try again.');
+    }
   };
 
   const onEmojiClick = (emojiData: any) => {
     setInputValue(prev => prev + emojiData.emoji);
+  };
+
+  // Ctrl+V Image Paste Handler
+  const handlePaste = async (e: React.ClipboardEvent<HTMLInputElement>) => {
+    const items = e.clipboardData?.items;
+    if (!items || !isConnected) return;
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (!file) return;
+
+        setIsUploading(true);
+        try {
+          const data = await chatApi.uploadFile(file);
+          await sendMessage(user.id, 'Sent an image', data.url, 'image');
+        } catch (err) {
+          console.error('Paste image upload failed:', err);
+          toast.error('Failed to paste and upload image.');
+        } finally {
+          setIsUploading(false);
+        }
+        return; // Only handle the first image
+      }
+    }
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -723,38 +838,128 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ user, onClose }) => {
       mediaRecorder.onstop = async () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
         
-        // Local preview data URI
-        const reader = new FileReader();
-        reader.readAsDataURL(audioBlob);
-        reader.onloadend = async () => {
-          const base64Audio = reader.result as string;
-          if (isConnected) {
-            await sendMessage(user.id, base64Audio, base64Audio, "voice");
+        // Proper REST API File Upload
+        try {
+          const audioFile = new File([audioBlob], `voice_note_${Date.now()}.webm`, { type: 'audio/webm' });
+          const uploadResult = await chatApi.uploadFile(audioFile);
+          
+          if (isConnected && uploadResult && uploadResult.url) {
+            await sendMessage(user.id, "[Voice Note]", uploadResult.url, "voice");
           }
-        };
+        } catch (uploadErr) {
+          console.error("Failed to upload voice note:", uploadErr);
+          toast.error("Failed to send voice note.");
+        }
 
         stream.getTracks().forEach(track => track.stop());
       };
 
-      mediaRecorder.start();
+      // Start recording with 250ms timeslice so chunks are populated continuously for preview!
+      mediaRecorder.start(250);
       setIsRecording(true);
+      setIsRecordingPaused(false);
       setRecordDuration(0);
       recordIntervalRef.current = setInterval(() => {
         setRecordDuration(prev => prev + 1);
       }, 1000);
       playBeepSynth(500, 0.08);
+
+      // Send recording status over SignalR
+      sendTypingStatus(user.id, false, true);
     } catch (err) {
       console.error("Microphone access denied:", err);
       alert("Could not activate microphone.");
     }
   };
 
+  const pauseRecordingFlow = () => {
+    if (!mediaRecorderRef.current || !isRecording) return;
+    if (mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.pause();
+      setIsRecordingPaused(true);
+      clearInterval(recordIntervalRef.current);
+      playBeepSynth(350, 0.08);
+
+      // Send typing/recording status over SignalR (reset)
+      sendTypingStatus(user.id, false, false);
+
+      // Create preview url from chunks collected so far
+      if (audioChunksRef.current.length > 0) {
+        const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const url = URL.createObjectURL(blob);
+        setPreviewUrl(url);
+      }
+    }
+  };
+
+  const resumeRecordingFlow = () => {
+    if (!mediaRecorderRef.current || !isRecording) return;
+    
+    // Stop and clean up preview if it was playing
+    if (previewAudioRef.current) {
+      previewAudioRef.current.pause();
+      previewAudioRef.current = null;
+    }
+    setIsPreviewPlaying(false);
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+      setPreviewUrl(null);
+    }
+
+    if (mediaRecorderRef.current.state === 'paused') {
+      mediaRecorderRef.current.resume();
+      setIsRecordingPaused(false);
+      recordIntervalRef.current = setInterval(() => {
+        setRecordDuration(prev => prev + 1);
+      }, 1000);
+      playBeepSynth(450, 0.08);
+
+      // Send recording status over SignalR
+      sendTypingStatus(user.id, false, true);
+    }
+  };
+
+  const togglePreviewPlay = () => {
+    if (!previewUrl) return;
+
+    if (previewAudioRef.current && isPreviewPlaying) {
+      previewAudioRef.current.pause();
+      setIsPreviewPlaying(false);
+    } else {
+      const audio = previewAudioRef.current || new Audio(previewUrl);
+      previewAudioRef.current = audio;
+      audio.play().then(() => {
+        setIsPreviewPlaying(true);
+      }).catch(err => {
+        console.error("Preview play failed:", err);
+      });
+      audio.onended = () => {
+        setIsPreviewPlaying(false);
+      };
+    }
+  };
+
   const stopRecordingFlow = (shouldSend = true) => {
     if (!mediaRecorderRef.current || !isRecording) return;
     
+    // Stop and clean up preview
+    if (previewAudioRef.current) {
+      previewAudioRef.current.pause();
+      previewAudioRef.current = null;
+    }
+    setIsPreviewPlaying(false);
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+      setPreviewUrl(null);
+    }
+
     clearInterval(recordIntervalRef.current);
     setIsRecording(false);
+    setIsRecordingPaused(false);
     playBeepSynth(400, 0.08);
+
+    // Send typing/recording status over SignalR (reset)
+    sendTypingStatus(user.id, false, false);
     
     if (shouldSend) {
       mediaRecorderRef.current.stop();
@@ -765,6 +970,25 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ user, onClose }) => {
         mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
       }
     }
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setInputValue(e.target.value);
+    
+    // Send typing status
+    if (!amTyping) {
+      setAmTyping(true);
+      sendTypingStatus(user.id, true, false);
+    }
+    
+    // Reset/Debounce typing status timeout
+    if (amTypingTimeoutRef.current) {
+      clearTimeout(amTypingTimeoutRef.current);
+    }
+    amTypingTimeoutRef.current = setTimeout(() => {
+      setAmTyping(false);
+      sendTypingStatus(user.id, false, false);
+    }, 2500); // 2.5 seconds timeout of no typing
   };
 
   const formatTimerStr = (time: number) => {
@@ -786,10 +1010,10 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ user, onClose }) => {
       {/* Voice Dialer overlay UI */}
       {callState !== 'idle' && (
         <div 
-          className="absolute inset-0 z-[1002] flex flex-col justify-between p-8 text-white animate-in fade-in slide-in-from-bottom-12 duration-300"
+          className="absolute inset-0 z-[1002] flex flex-col justify-between p-6 text-white animate-in fade-in slide-in-from-bottom-12 duration-300"
           style={{ backgroundColor: '#0c0d1b' }}
         >
-          <div className="text-center space-y-4 pt-12">
+          <div className="text-center space-y-2 pt-6">
             {/* Pulsing Avatar Container */}
             <div className="relative mx-auto w-24 h-24 flex items-center justify-center">
               <div className={`absolute inset-0 rounded-full bg-blue-500/20 animate-ping duration-1000 ${callState === 'connected' ? 'hidden' : ''}`} />
@@ -833,21 +1057,21 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ user, onClose }) => {
             {formatTimerStr(callDuration)}
           </div>
 
-          <div className="flex flex-col gap-8 items-center pb-8">
-            <div className="flex items-center gap-8 justify-center">
+          <div className="flex flex-col gap-4 items-center pb-4">
+            <div className="flex items-center gap-6 justify-center">
               {/* Mute Button */}
               <div className="flex flex-col items-center gap-2">
                 <button 
                   type="button"
                   onClick={() => setIsMuted(!isMuted)}
                   title={isMuted ? "Unmute Call" : "Mute Call"}
-                  className={`w-14 h-14 rounded-full flex items-center justify-center transition-all border-2 shadow-lg ${
+                  className={`w-12 h-12 rounded-full flex items-center justify-center transition-all border-2 shadow-lg ${
                     isMuted 
                       ? 'bg-red-500 border-red-400 text-white hover:bg-red-600 hover:scale-105 active:scale-95' 
                       : 'bg-slate-800/90 border-slate-700 text-slate-200 hover:bg-slate-700 hover:text-white hover:scale-105 active:scale-95'
                   }`}
                 >
-                  {isMuted ? <VolumeX size={22} /> : <Volume2 size={22} />}
+                  {isMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
                 </button>
                 <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                   {isMuted ? 'Muted' : 'Mute'}
@@ -861,13 +1085,13 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ user, onClose }) => {
                   onClick={toggleHold}
                   disabled={callState === 'dialing' || callState === 'ringing' || callState === 'ended'}
                   title={callState === 'onhold' ? "Resume Call" : "Hold Call"}
-                  className={`w-14 h-14 rounded-full flex items-center justify-center transition-all border-2 shadow-lg ${
+                  className={`w-12 h-12 rounded-full flex items-center justify-center transition-all border-2 shadow-lg ${
                     callState === 'onhold'
                       ? 'bg-amber-500 border-amber-400 text-black hover:bg-amber-600 hover:scale-105 active:scale-95'
                       : 'bg-slate-800/90 border-slate-700 text-slate-200 hover:bg-slate-700 hover:text-white disabled:bg-slate-900/60 disabled:border-slate-850 disabled:text-slate-600 disabled:scale-100 disabled:opacity-40 hover:scale-105 active:scale-95'
                   }`}
                 >
-                  {callState === 'onhold' ? <Play size={22} /> : <Pause size={22} />}
+                  {callState === 'onhold' ? <Play size={20} /> : <Pause size={20} />}
                 </button>
                 <span className={`text-[10px] font-bold uppercase tracking-wider ${
                   callState === 'dialing' || callState === 'ringing' || callState === 'ended' 
@@ -885,9 +1109,9 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ user, onClose }) => {
                 type="button"
                 onClick={() => hangUpCall()}
                 title="Hang up"
-                className="w-16 h-16 bg-red-600 hover:bg-red-500 border-2 border-red-500 rounded-full flex items-center justify-center transition-all text-white shadow-xl shadow-red-600/30 hover:scale-110 active:scale-95"
+                className="w-14 h-14 bg-red-600 hover:bg-red-500 border-2 border-red-500 rounded-full flex items-center justify-center transition-all text-white shadow-xl shadow-red-600/30 hover:scale-110 active:scale-95"
               >
-                <PhoneOff size={26} />
+                <PhoneOff size={24} />
               </button>
               <span className="text-[10px] font-bold uppercase tracking-wider text-red-500">End Call</span>
             </div>
@@ -910,8 +1134,18 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ user, onClose }) => {
           </div>
           <div>
             <h3 className="text-sm font-extrabold tracking-tight" style={{ color: 'var(--text-primary)' }}>{user.name}</h3>
-            <p className="text-[10px] font-semibold tracking-wide opacity-60 mt-0.5" style={{ color: 'var(--text-muted)' }}>
-              {isOnline ? 'Active Now' : 'Offline'}
+            <p className="text-[10px] font-bold tracking-wide mt-0.5 transition-all" style={{ color: partnerTypingState.isTyping || partnerTypingState.isRecording ? '#3b82f6' : 'var(--text-muted)' }}>
+              {partnerTypingState.isRecording ? (
+                <span className="flex items-center gap-1 animate-pulse">
+                  <Mic size={10} /> recording audio...
+                </span>
+              ) : partnerTypingState.isTyping ? (
+                <span className="animate-pulse">typing...</span>
+              ) : isOnline ? (
+                'Active Now'
+              ) : (
+                'Offline'
+              )}
             </p>
           </div>
         </div>
@@ -1022,7 +1256,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ user, onClose }) => {
                   }`}>
                     {type === 'image' && url ? (
                       <div className="p-1">
-                        <img src={url} alt="attachment" className="rounded-xl max-h-60 w-full object-cover cursor-pointer hover:opacity-90 transition-opacity" onClick={() => window.open(url)} />
+                        <img src={cleanAttachmentUrl(url)} alt="attachment" className="rounded-xl max-h-60 w-full object-cover cursor-pointer hover:opacity-90 transition-opacity" onClick={() => window.open(cleanAttachmentUrl(url))} />
                       </div>
                     ) : type === 'file' && url ? (
                       <div className="p-3 flex items-center gap-3 min-w-[150px]">
@@ -1031,14 +1265,14 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ user, onClose }) => {
                         </div>
                         <div className="flex-1 overflow-hidden">
                           <p className="text-[11px] font-bold truncate">File Attachment</p>
-                          <a href={url} target="_blank" className="text-[9px] opacity-70 flex items-center gap-1 hover:underline">
+                          <a href={cleanAttachmentUrl(url)} target="_blank" className="text-[9px] opacity-70 flex items-center gap-1 hover:underline">
                             <Download size={10} /> Download
                           </a>
                         </div>
                       </div>
                     ) : type === 'voice' ? (
                       /* Stunning Dynamic Voice Player */
-                      <VoicePlayer url={url || content} isMe={isMe} />
+                      <VoicePlayer url={cleanAttachmentUrl(url || content)} isMe={isMe} />
                     ) : type === 'call' ? (
                       <div className="p-3.5 flex items-center gap-3 min-w-[200px]">
                         <div className={`p-2.5 rounded-xl ${
@@ -1054,9 +1288,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ user, onClose }) => {
                         </div>
                       </div>
                     ) : (
-                      <div className="px-4 py-2.5">
-                        <p className="text-[13px] leading-relaxed selection:bg-white/30">{content}</p>
-                      </div>
+                      <MessageContent content={content} isMe={isMe} />
                     )}
                   </div>
                   <span className="text-[9px] mt-1.5 px-1 font-medium opacity-40 uppercase tracking-tighter">
@@ -1088,7 +1320,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ user, onClose }) => {
             /* Audio voice recording wave UI animation */
             <div className="flex items-center justify-between bg-red-500/10 border border-red-500/20 rounded-2xl p-2.5 shadow-md animate-in slide-in-from-bottom-6">
               <div className="flex items-center gap-3">
-                <div className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
+                <div className={`w-2.5 h-2.5 rounded-full ${isRecordingPaused ? 'bg-amber-500' : 'bg-red-500 animate-pulse'}`} />
                 <span className="text-xs font-bold text-red-500 font-mono">
                   {formatTimerStr(recordDuration)}
                 </span>
@@ -1098,9 +1330,12 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ user, onClose }) => {
                   {Array.from({ length: 12 }).map((_, i) => (
                     <div 
                       key={i}
-                      className="w-[2.5px] bg-red-400 rounded-full animate-bounce"
+                      className="w-[2.5px] bg-red-400 rounded-full"
                       style={{ 
-                        height: `${Math.random() * 10 + 4}px`,
+                        height: isRecordingPaused ? '4px' : `${Math.random() * 10 + 4}px`,
+                        animationName: isRecordingPaused ? 'none' : 'bounce',
+                        animationDuration: '0.6s',
+                        animationIterationCount: 'infinite',
                         animationDelay: `${i * 0.08}s` 
                       }}
                     />
@@ -1108,20 +1343,46 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ user, onClose }) => {
                 </div>
               </div>
               <div className="flex items-center gap-2">
+                {/* Discard recording */}
                 <button 
                   type="button" 
                   onClick={() => stopRecordingFlow(false)}
-                  className="p-1.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 text-slate-400 hover:text-red-500 transition-all text-xs font-medium"
+                  className="p-2 rounded-xl text-slate-400 hover:text-red-500 hover:bg-red-500/10 transition-all"
+                  title="Discard Recording"
                 >
-                  Discard
+                  <Trash2 size={16} />
                 </button>
+
+                {/* Preview Play/Pause when paused */}
+                {isRecordingPaused && previewUrl && (
+                  <button 
+                    type="button"
+                    onClick={togglePreviewPlay}
+                    className={`p-2 rounded-xl transition-all bg-emerald-500 hover:bg-emerald-600 text-white shadow-md flex items-center justify-center`}
+                    title={isPreviewPlaying ? "Pause Preview" : "Listen Preview"}
+                  >
+                    {isPreviewPlaying ? <Pause size={16} /> : <Play size={16} className="fill-current" />}
+                  </button>
+                )}
+
+                {/* Pause / Resume recording */}
+                <button 
+                  type="button" 
+                  onClick={isRecordingPaused ? resumeRecordingFlow : pauseRecordingFlow}
+                  className={`p-2 rounded-xl transition-all ${isRecordingPaused ? 'text-amber-500 hover:bg-amber-500/10' : 'text-slate-400 hover:text-slate-600 hover:bg-black/5 dark:hover:bg-white/5'}`}
+                  title={isRecordingPaused ? "Resume Recording" : "Pause Recording"}
+                >
+                  {isRecordingPaused ? <Mic size={16} /> : <Pause size={16} />}
+                </button>
+
+                {/* Send voice note */}
                 <button 
                   type="button"
                   onClick={() => stopRecordingFlow(true)}
-                  className="p-2 bg-red-600 text-white rounded-xl shadow-lg shadow-red-500/20 hover:scale-105 active:scale-95 transition-all"
-                  title="Send Recording"
+                  className="p-2 bg-blue-600 text-white rounded-xl shadow-lg shadow-blue-500/20 hover:scale-105 active:scale-95 transition-all flex items-center justify-center"
+                  title="Send Voice Note"
                 >
-                  <Square size={14} className="fill-current" />
+                  <Send size={16} />
                 </button>
               </div>
             </div>
@@ -1171,7 +1432,8 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ user, onClose }) => {
                 ref={inputRef}
                 type="text"
                 value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
+                onChange={handleInputChange}
+                onPaste={handlePaste}
                 placeholder="Write a message..."
                 className="flex-1 bg-transparent border-none outline-none text-sm px-1 py-1.5 min-w-0"
                 style={{ color: 'var(--text-primary)' }}

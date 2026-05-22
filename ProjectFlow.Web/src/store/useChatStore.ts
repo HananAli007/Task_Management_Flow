@@ -19,9 +19,27 @@ interface ChatState {
   clearCallHistory: () => void;
   incomingCall: { callerId: string; callerName: string; callerAvatar?: string; sdpOffer: string } | null;
   setIncomingCall: (call: { callerId: string; callerName: string; callerAvatar?: string; sdpOffer: string } | null) => void;
+  // Draft Message Support (WhatsApp-style)
+  getDraft: (userId: string) => string;
+  setDraft: (userId: string, text: string) => void;
+  clearDraft: (userId: string) => void;
 }
 
-export const useChatStore = create<ChatState>((set) => {
+const DRAFT_STORAGE_KEY = 'PF_CHAT_DRAFTS';
+
+const loadDrafts = (): Record<string, string> => {
+  if (typeof window === 'undefined') return {};
+  try {
+    return JSON.parse(localStorage.getItem(DRAFT_STORAGE_KEY) || '{}');
+  } catch { return {}; }
+};
+
+const saveDrafts = (drafts: Record<string, string>) => {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(drafts));
+};
+
+export const useChatStore = create<ChatState>((set, get) => {
   // Load initial history from localStorage if in client context
   const initialHistory = typeof window !== 'undefined'
     ? JSON.parse(localStorage.getItem('PF_CALL_HISTORY') || '[]')
@@ -47,5 +65,25 @@ export const useChatStore = create<ChatState>((set) => {
       localStorage.removeItem('PF_CALL_HISTORY');
       return { callHistory: [] };
     }),
+    // Draft Message Functions
+    getDraft: (userId: string) => {
+      const drafts = loadDrafts();
+      return drafts[userId.toLowerCase()] || '';
+    },
+    setDraft: (userId: string, text: string) => {
+      const drafts = loadDrafts();
+      const key = userId.toLowerCase();
+      if (text.trim()) {
+        drafts[key] = text;
+      } else {
+        delete drafts[key];
+      }
+      saveDrafts(drafts);
+    },
+    clearDraft: (userId: string) => {
+      const drafts = loadDrafts();
+      delete drafts[userId.toLowerCase()];
+      saveDrafts(drafts);
+    },
   };
 });

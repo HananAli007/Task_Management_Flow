@@ -11,16 +11,16 @@ export interface CreateTagDto {
 
 export const tagApi = {
   getAll: async (): Promise<Tag[]> => {
-    const response = await api.get("/Tags");
+    const response = await api.get("/api/Tags");
     return response.data.data;
   },
 
   create: async (data: CreateTagDto): Promise<Tag> => {
-    const response = await api.post("/Tags", data);
+    const response = await api.post("/api/Tags", data);
     return response.data.data;
   },
 
   assign: async (taskId: string, tagNames: string[]): Promise<void> => {
-    await api.post(`/Tags/assign/${taskId}`, tagNames);
+    await api.post(`/api/Tags/assign/${taskId}`, tagNames);
   }
 };
