@@ -106,6 +106,17 @@ if (-not $SkipDeploy) {
 
     Copy-Item -Path "$standaloneDir\*" -Destination $deployDir -Recurse -Force
 
+    # Patch server.js to support iisnode named pipes (since process.env.PORT starts with '\\.\pipe\')
+    $serverJsPath = "$deployDir\server.js"
+    if (Test-Path $serverJsPath) {
+        $content = Get-Content -Path $serverJsPath -Raw
+        $oldPortPattern = "const currentPort = parseInt(process.env.PORT, 10) || 3000"
+        $newPortPattern = "const currentPort = (process.env.PORT && isNaN(Number(process.env.PORT))) ? process.env.PORT : (parseInt(process.env.PORT, 10) || 3000)"
+        $content = $content.Replace($oldPortPattern, $newPortPattern)
+        Set-Content -Path $serverJsPath -Value $content -Force
+        Write-Host "Patched server.js for iisnode named pipes successfully." -ForegroundColor Green
+    }
+
     # Copy static assets (not included in standalone)
     $staticDest = "$deployDir\.next\static"
     if (-not (Test-Path $staticDest)) { New-Item -ItemType Directory -Path $staticDest | Out-Null }
@@ -117,8 +128,11 @@ if (-not $SkipDeploy) {
         Copy-Item -Path $publicSrc -Destination $deployDir -Recurse -Force
     }
 
-    # Copy web.config and .env.production
+    # Copy web.config, iisnode.yml and .env.production
     Copy-Item -Path "$webDir\web.config"        -Destination $deployDir -Force
+    if (Test-Path "$webDir\iisnode.yml") {
+        Copy-Item -Path "$webDir\iisnode.yml"   -Destination $deployDir -Force
+    }
     Copy-Item -Path "$webDir\.env.production"   -Destination $deployDir -Force
 
     # Copy package.json

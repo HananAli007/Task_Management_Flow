@@ -149,7 +149,10 @@ builder.Services.AddScoped<IColumnService, ColumnService>();
 builder.Services.AddScoped<ITagService, TagService>();
 builder.Services.AddScoped<IFileStorageService, LocalFileStorageService>();
 builder.Services.AddScoped<INotificationService, ProjectFlow.API.Services.NotificationService>();
-builder.Services.AddSignalR().AddJsonProtocol(options =>
+builder.Services.AddSignalR(options =>
+{
+    options.MaximumReceiveMessageSize = null; // No limit on message size
+}).AddJsonProtocol(options =>
 {
     options.PayloadSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
 });

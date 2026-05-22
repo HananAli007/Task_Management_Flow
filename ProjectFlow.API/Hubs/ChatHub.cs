@@ -82,6 +82,15 @@ public class ChatHub : Hub
         await Clients.Group(senderIdStr).SendAsync("ReceiveMessage", savedMessage);
     }
 
+    public async Task SendTypingStatus(string receiverIdStr, bool isTyping, bool isRecording)
+    {
+        var senderIdStr = Context.User?.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(senderIdStr)) return;
+
+        // Relay the typing/recording status to the receiver group
+        await Clients.Group(receiverIdStr).SendAsync("UserTypingStatus", senderIdStr, isTyping, isRecording);
+    }
+
     public async Task MarkAsRead(string senderIdStr)
     {
         var receiverIdStr = Context.User?.FindFirstValue(ClaimTypes.NameIdentifier);

@@ -275,7 +275,7 @@ public class AppDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>, Guid>
         builder.Entity<ChatMessage>(e =>
         {
             e.HasKey(m => m.Id);
-            e.Property(m => m.Content).HasMaxLength(4000).IsRequired();
+            e.Property(m => m.Content).HasColumnType("nvarchar(max)").IsRequired();
             e.HasIndex(m => new { m.SenderId, m.ReceiverId });
             e.Property(m => m.SentAt).HasDefaultValueSql("GETDATE()");
             e.HasIndex(m => m.SentAt);
